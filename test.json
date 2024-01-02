@@ -1,0 +1,7 @@
+{
+  "java": {
+    "command": "java -jar",
+    "args": ["${file}"],
+    "file_regex": "^(...*?):([0-9]*):?([0-9]*)"
+  }
+}

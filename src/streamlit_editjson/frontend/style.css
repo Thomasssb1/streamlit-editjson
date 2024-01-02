@@ -1,0 +1,19 @@
+#json-container {
+  color: rgb(50, 50, 127);
+}
+
+pre {
+  font-size: 15px;
+}
+
+div span[data-color-code="key"] {
+  color: #57d474;
+}
+
+div span[data-color-code="value"] {
+  color: #d4b860;
+}
+
+div span[data-color-code="value"][contenteditable]:focus {
+  outline: none;
+}
