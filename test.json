@@ -1,7 +1,18 @@
 {
   "java": {
-    "command": "java -jar",
-    "args": ["${file}"],
-    "file_regex": "^(...*?):([0-9]*):?([0-9]*)"
+    "showErrors": true,
+    "showComments": true,
+    "style": {
+      "keywords": "#987dd2",
+      "identifiers": "#ffffff",
+      "literals": {
+        "string": "#a8cd76",
+        "number": "#fc9c64"
+      },
+      "operators": "#9cdbfb",
+      "seperators": "#72a5cb",
+      "comments": "#98c766",
+      "background": "#53597a"
+    }
   }
 }
