@@ -1,19 +1,72 @@
+#root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
 #json-container {
-  color: rgb(50, 50, 127);
+  color: #d9e2ef;
+  background: #0f1724;
+  border: 1px solid #253247;
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.5;
 }
 
-pre {
-  font-size: 15px;
+.json-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
 }
 
-div span[data-color-code="key"] {
-  color: #57d474;
+.json-punct {
+  color: #8aa2c1;
+  font-family: Consolas, "Courier New", monospace;
 }
 
-div span[data-color-code="value"] {
-  color: #d4b860;
+.json-index {
+  color: #8fbcff;
+  min-width: 28px;
+  font-family: Consolas, "Courier New", monospace;
 }
 
-div span[data-color-code="value"][contenteditable]:focus {
-  outline: none;
+.json-key {
+  min-width: 110px;
+  max-width: 280px;
+  background: #132034;
+  color: #6de89a;
+  border: 1px solid #314663;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.json-value {
+  min-width: 100px;
+  background: #132034;
+  color: #ffd27d;
+  border: 1px solid #314663;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.json-key:disabled,
+.json-value:disabled,
+.json-value-boolean:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.json-key:focus,
+.json-value:focus,
+.json-value-boolean:focus {
+  outline: 1px solid #7db3ff;
+  border-color: #7db3ff;
+}
+
+.json-value-boolean {
+  min-width: 95px;
+  background: #132034;
+  color: #ffd27d;
+  border: 1px solid #314663;
+  border-radius: 4px;
+  padding: 2px 6px;
 }
