@@ -1,1 +1,2 @@
 streamlit
+py-mini-racer

@@ -1,3 +1,4 @@
+import importlib
 import json
 import sys
 import tempfile
@@ -11,10 +12,12 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-import streamlit_editjson
-
 
 class TestEditJson(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.streamlit_editjson = importlib.import_module("streamlit_editjson")
+
     def _create_temp_json_file(self, data):
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, encoding="utf-8"
@@ -29,8 +32,10 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=None)
 
-        with patch.object(streamlit_editjson, "_component_func", mocked_component):
-            result = streamlit_editjson.editjson(filepath)
+        with patch.object(
+            self.streamlit_editjson, "_component_func", mocked_component
+        ):
+            result = self.streamlit_editjson.editjson(filepath)
 
         self.assertEqual(result, original)
 
@@ -41,8 +46,10 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=edited)
 
-        with patch.object(streamlit_editjson, "_component_func", mocked_component):
-            result = streamlit_editjson.editjson(
+        with patch.object(
+            self.streamlit_editjson, "_component_func", mocked_component
+        ):
+            result = self.streamlit_editjson.editjson(
                 filepath, key_editable=True, value_editable=False, key="editor_1"
             )
 
@@ -54,8 +61,10 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=None)
 
-        with patch.object(streamlit_editjson, "_component_func", mocked_component):
-            streamlit_editjson.editjson(filepath)
+        with patch.object(
+            self.streamlit_editjson, "_component_func", mocked_component
+        ):
+            self.streamlit_editjson.editjson(filepath)
 
         _, kwargs = mocked_component.call_args
 
