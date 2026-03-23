@@ -19,12 +19,12 @@ class TestEditJson(unittest.TestCase):
         cls.streamlit_editjson = importlib.import_module("streamlit_editjson")
 
     def _create_temp_json_file(self, data):
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        )
-        with tmp:
-            json.dump(data, tmp)
-        return tmp.name
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+
+        filepath = Path(tmp_dir.name) / "input.json"
+        filepath.write_text(json.dumps(data), encoding="utf-8")
+        return str(filepath)
 
     def test_returns_original_json_when_component_returns_none(self):
         original = {"name": "Alice", "age": 31}

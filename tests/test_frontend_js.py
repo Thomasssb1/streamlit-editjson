@@ -5,7 +5,8 @@ from pathlib import Path
 from py_mini_racer import py_mini_racer
 
 
-MAIN_JS_PATH = Path("src/streamlit_editjson/frontend/main.js")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MAIN_JS_PATH = PROJECT_ROOT / "src" / "streamlit_editjson" / "frontend" / "main.js"
 
 
 class TestFrontendJS(unittest.TestCase):
