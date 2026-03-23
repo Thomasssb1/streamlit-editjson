@@ -33,3 +33,21 @@ st.write(value)  # Python dict
 - `key`: optional Streamlit component key.
 
 The component returns the edited JSON object as a Python `dict`.
+
+## Testing
+
+### Python unit tests
+
+Run:
+
+```sh
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+### Running locally
+
+Run:
+
+```sh
+python -m streamlit run src/streamlit_editjson/__init__.py --server.port 8501
+```
