@@ -261,7 +261,10 @@ function onRender(event) {
   editorState.valueEditable = Boolean(value_editable);
 
   renderEditor();
-  Streamlit.setComponentValue(editorState.data);
+
+  if (shouldReset) {
+    Streamlit.setComponentValue(editorState.data);
+  }
 }
 
 Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
