@@ -146,6 +146,85 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(calls[2], ["text", "abc", "json-value json-value-text", True])
         self.assertEqual(calls[3], ["text", "null", "json-value json-value-text", True])
 
+    def test_render_object_key_rename_updates_underlying_object(self):
+        ctx = self._ctx()
+
+        result = json.loads(
+            ctx.eval(
+                """
+                JSON.stringify((function () {
+                  editorState.keyEditable = true;
+                  var obj = { old_key: 123 };
+                  editorState.data = obj;
+                  var container = {
+                    children: [],
+                    appendChild: function (x) { this.children.push(x); }
+                  };
+
+                  renderObject(container, obj, 0);
+
+                  var keyInput = container.children[1].children[0];
+                  keyInput.value = "new_key";
+                  keyInput._listener();
+
+                  return {
+                    hasOldKey: Object.prototype.hasOwnProperty.call(obj, "old_key"),
+                    hasNewKey: Object.prototype.hasOwnProperty.call(obj, "new_key"),
+                    newValue: obj.new_key
+                  };
+                })())
+                """
+            )
+        )
+
+        self.assertFalse(result["hasOldKey"])
+        self.assertTrue(result["hasNewKey"])
+        self.assertEqual(result["newValue"], 123)
+
+    def test_render_object_key_rename_rejects_empty_and_collision(self):
+        ctx = self._ctx()
+
+        result = json.loads(
+            ctx.eval(
+                """
+                JSON.stringify((function () {
+                  editorState.keyEditable = true;
+                  var obj = { first: 1, second: 2 };
+                  editorState.data = obj;
+                  var container = {
+                    children: [],
+                    appendChild: function (x) { this.children.push(x); }
+                  };
+
+                  renderObject(container, obj, 0);
+                  var firstKeyInput = container.children[1].children[0];
+
+                  firstKeyInput.value = "   ";
+                  firstKeyInput._listener();
+
+                  var keysAfterEmpty = Object.keys(obj).sort();
+
+                  firstKeyInput.value = "second";
+                  firstKeyInput._listener();
+
+                  var keysAfterCollision = Object.keys(obj).sort();
+
+                  return {
+                    keysAfterEmpty: keysAfterEmpty,
+                    keysAfterCollision: keysAfterCollision,
+                    firstValue: obj.first,
+                    secondValue: obj.second
+                  };
+                })())
+                """
+            )
+        )
+
+        self.assertEqual(result["keysAfterEmpty"], ["first", "second"])
+        self.assertEqual(result["keysAfterCollision"], ["first", "second"])
+        self.assertEqual(result["firstValue"], 1)
+        self.assertEqual(result["secondValue"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
