@@ -15,7 +15,7 @@
   <div id="root">
     <div class="json-toolbar">
       <span class="json-toolbar-title">JSON</span>
-      <button id="copy-json" type="button" title="Copy the current valid JSON">Copy JSON</button>
+      <button id="copy-json" type="button" aria-live="polite" aria-atomic="true" title="Copy the current valid JSON">Copy JSON</button>
     </div>
     <div id="copy-status" class="json-copy-status" role="status" aria-live="polite"></div>
     <textarea id="copy-fallback" aria-label="JSON to copy" readonly hidden spellcheck="false"></textarea>

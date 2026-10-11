@@ -166,8 +166,14 @@ function sendValue() {
 }
 
 let copyButtonReady = false;
+let copyResetTimer = null;
 
 function resetCopyStatus() {
+  if (copyResetTimer !== null) {
+    clearTimeout(copyResetTimer);
+    copyResetTimer = null;
+  }
+  document.getElementById("copy-json").textContent = "Copy JSON";
   document.getElementById("copy-status").textContent = "";
   document.getElementById("copy-fallback").hidden = true;
 }
@@ -181,7 +187,13 @@ async function copyJson() {
   button.disabled = true;
   try {
     await navigator.clipboard.writeText(text);
-    if (text === stringifyJson(editorState.data, true)) status.textContent = "Copied JSON";
+    if (text === stringifyJson(editorState.data, true)) {
+      button.textContent = "Copied JSON";
+      copyResetTimer = setTimeout(() => {
+        button.textContent = "Copy JSON";
+        copyResetTimer = null;
+      }, 2500);
+    }
   } catch (_) {
     if (text === stringifyJson(editorState.data, true)) {
       status.textContent = "Clipboard unavailable. Select the JSON below and copy it.";

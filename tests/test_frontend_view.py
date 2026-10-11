@@ -230,7 +230,7 @@ class TestFrontendView(unittest.TestCase):
         )
         self.assertIn('\n  "id": 9007199254740993', copied)
         self.assertEqual(
-            ctx.eval('document.getElementById("copy-status").textContent'),
+            ctx.eval('document.getElementById("copy-json").textContent'),
             "Copied JSON",
         )
         self.assertEqual(ctx.eval("__emissionCount"), 1)
@@ -634,3 +634,80 @@ class TestFrontendView(unittest.TestCase):
             )
         )
         self.assertEqual(ctx.eval("Streamlit.lastFrameHeight"), 320)
+
+    def test_copy_success_appears_only_on_button_for_two_and_a_half_seconds(self):
+        ctx = self._ctx({"value": "text"})
+        ctx.eval("""
+            var navigator = {clipboard: {writeText: () => Promise.resolve()}};
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copied JSON"
+        )
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-status").textContent'), ""
+        )
+        self.assertTrue(ctx.eval('document.getElementById("copy-fallback").hidden'))
+        self.assertFalse(ctx.eval('document.getElementById("copy-json").disabled'))
+        ctx.eval("advanceTime(2499);")
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copied JSON"
+        )
+        ctx.eval("advanceTime(1);")
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copy JSON"
+        )
+
+    def test_repeated_copy_restarts_the_button_confirmation_timer(self):
+        ctx = self._ctx({"value": "text"})
+        ctx.eval("""
+            var navigator = {clipboard: {writeText: () => Promise.resolve()}};
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        ctx.eval(
+            'advanceTime(2000); document.getElementById("copy-json").dispatchEvent({type: "click"});'
+        )
+        ctx.eval("advanceTime(500);")
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copied JSON"
+        )
+        ctx.eval("advanceTime(2000);")
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copy JSON"
+        )
+        self.assertEqual(ctx.eval("__timers.size"), 0)
+
+    def test_edits_clear_copy_confirmation_and_failure_keeps_fallback_visible(self):
+        ctx = self._ctx({"value": "text"})
+        ctx.eval("""
+            var navigator = {clipboard: {writeText: () => Promise.resolve()}};
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        ctx.eval("""
+            var input = findAll(container, "json-value")[0];
+            input.value = "changed";
+            input.dispatchEvent({type: "change"});
+        """)
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copy JSON"
+        )
+        self.assertEqual(ctx.eval("__timers.size"), 0)
+        ctx.eval('document.getElementById("copy-json").dispatchEvent({type: "click"});')
+        ctx.eval("""
+            advanceTime(1000);
+            navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        ctx.eval("advanceTime(3000);")
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-json").textContent'), "Copy JSON"
+        )
+        self.assertIn(
+            "Clipboard unavailable",
+            ctx.eval('document.getElementById("copy-status").textContent'),
+        )
+        self.assertFalse(ctx.eval('document.getElementById("copy-fallback").hidden'))
+        self.assertEqual(
+            json.loads(ctx.eval('document.getElementById("copy-fallback").value')),
+            {"value": "changed"},
+        )

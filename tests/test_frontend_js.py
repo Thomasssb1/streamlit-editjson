@@ -21,6 +21,24 @@ class TestFrontendJS(unittest.TestCase):
         ctx.eval(
             r"""
             var __messages = [];
+            var __now = 0, __timerId = 0, __timers = new Map();
+            function setTimeout(callback, delay) {
+              var id = ++__timerId;
+              __timers.set(id, {callback: callback, at: __now + delay});
+              return id;
+            }
+            function clearTimeout(id) { __timers.delete(id); }
+            function advanceTime(ms) {
+              var end = __now + ms;
+              while (true) {
+                var next = Array.from(__timers.entries()).sort((a, b) => a[1].at - b[1].at)[0];
+                if (!next || next[1].at > end) break;
+                __now = next[1].at;
+                __timers.delete(next[0]);
+                next[1].callback();
+              }
+              __now = end;
+            }
             var console = { log: function () {} };
             var window = {
               parent: { postMessage: function (message) { __messages.push(message); } },
