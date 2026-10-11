@@ -31,7 +31,7 @@ st.write(value)  # Python dict
 - `key_editable`: allow editing JSON keys.
 - `value_editable`: allow editing JSON values.
 - `key`: optional Streamlit component key.
-- `editable`: deprecated keyword-only alias for `value_editable`.
+- `editable`: keyword-only compatibility alias for `value_editable`.
 
 The component returns the edited JSON object as a Python `dict`.
 Integer values retain their exact digits, including integers outside JavaScript's
@@ -42,11 +42,10 @@ String values use text areas so line breaks remain visible and editable.
 
 ## Migrating from `editable`
 
-The old `editable=` keyword still works and emits a `DeprecationWarning` pointing
-at the caller. Replace it with `value_editable=`:
+The old `editable=` keyword still works. New code should use `value_editable=`:
 
 ```python
-# Before (still supported with a deprecation warning)
+# Before (still supported)
 value = editjson("test.json", editable=False, key="editor")
 
 # After
