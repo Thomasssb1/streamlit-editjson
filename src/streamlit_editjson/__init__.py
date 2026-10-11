@@ -1,6 +1,7 @@
 import json
+import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -13,12 +14,21 @@ _component_func = components.declare_component(
 )
 
 
+class _Unset:
+    """Distinguish omitted flags from explicit True, False, or None."""
+
+
+_UNSET = _Unset()
+
+
 # Create the python function that will be called
 def editjson(
     filepath: str,
     key_editable: Optional[bool] = False,
-    value_editable: Optional[bool] = True,
+    value_editable: Union[bool, None, _Unset] = _UNSET,
     key: Optional[str] = None,
+    *,
+    editable: Union[bool, None, _Unset] = _UNSET,
 ) -> Dict[str, Any]:
     """
     Render a JSON editor component and return the edited JSON as a Python dict.
@@ -28,15 +38,29 @@ def editjson(
         key_editable: Whether JSON keys can be edited. Default is False.
         value_editable: Whether JSON values can be edited. Default is True.
         key: Optional Streamlit component key.
+        editable: Deprecated keyword-only alias for value_editable. If both are
+            supplied, value_editable takes precedence. Keys are unaffected.
 
     Returns:
         The edited JSON object as a Python dict.
     """
+    if editable is not _UNSET:
+        warnings.warn(
+            "editable is deprecated; use value_editable instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if value_editable is _UNSET:
+            value_editable = editable
+    if value_editable is _UNSET:
+        value_editable = True
+
     with open(filepath, "r", encoding="utf-8") as f:
         json_obj = json.load(f)
 
+    json_str = json.dumps(json_obj)
     component_value = _component_func(
-        json_str=json.dumps(json_obj),
+        json_str=json_str,
         key_editable=key_editable,
         value_editable=value_editable,
         key=key,
@@ -46,6 +70,10 @@ def editjson(
     if component_value is None:
         return json_obj
 
+    # UTF-8 JSON bytes preserve large integers and distinguish this protocol
+    # from raw JSON values (including strings) returned by older frontends.
+    if isinstance(component_value, bytes):
+        return json.loads(component_value)
     return component_value
 
 

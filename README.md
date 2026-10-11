@@ -26,16 +26,30 @@ st.write(value)  # Python dict
 
 ## API
 
-`editjson(filepath, key_editable=False, value_editable=True, key=None) -> dict`
+`editjson(filepath, key_editable=False, value_editable=True, key=None, *, editable=...) -> dict`
 
 - `filepath`: path to a JSON file.
 - `key_editable`: allow editing JSON keys.
 - `value_editable`: allow editing JSON values.
 - `key`: optional Streamlit component key.
+- `editable`: keyword-only compatibility alias for `value_editable`.
 
 The component returns the edited JSON object as a Python `dict`.
+Integer values retain their exact digits, including integers outside JavaScript's
+safe-integer range, when loaded, edited, and returned to Python.
+Clearing a number field, or entering an invalid number, keeps its last valid value
+and displays a validation error. Enter `0` explicitly to set a value to zero.
+String values use text areas so line breaks remain visible and editable.
 
 ## Testing
+
+Install the development dependencies so local checks use the same Ruff version
+as CI:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m ruff check .
+```
 
 ### Python unit tests
 

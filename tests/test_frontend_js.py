@@ -4,7 +4,6 @@ from pathlib import Path
 
 from py_mini_racer import py_mini_racer
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MAIN_JS_PATH = PROJECT_ROOT / "src" / "streamlit_editjson" / "frontend" / "main.js"
 
@@ -13,12 +12,26 @@ class TestFrontendJS(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.main_js = MAIN_JS_PATH.read_text(encoding="utf-8")
+        cls.bridge_js = MAIN_JS_PATH.with_name("streamlit-component-lib.js").read_text(
+            encoding="utf-8"
+        )
 
     def _ctx(self):
         ctx = py_mini_racer.MiniRacer()
         ctx.eval(
-            """
-            var window = {};
+            r"""
+            var __messages = [];
+            var console = { log: function () {} };
+            var window = {
+              parent: { postMessage: function (message) { __messages.push(message); } },
+              addEventListener: function () {}
+            };
+            // V8 has no browser TextEncoder; supply its UTF-8 API for bridge tests.
+            function TextEncoder() {}
+            TextEncoder.prototype.encode = function (text) {
+              var utf8 = unescape(encodeURIComponent(text));
+              return Uint8Array.from(utf8, function (c) { return c.charCodeAt(0); });
+            };
             var document = {
               body: { scrollHeight: 120 },
               getElementById: function () {
@@ -28,7 +41,7 @@ class TestFrontendJS(unittest.TestCase):
                 };
               },
               createElement: function (tag) {
-                return {
+                var element = {
                   tagName: tag,
                   className: "",
                   type: "",
@@ -38,25 +51,132 @@ class TestFrontendJS(unittest.TestCase):
                   textContent: "",
                   style: {},
                   children: [],
+                  validationMessage: "",
+                  setCustomValidity: function (message) { this.validationMessage = message; },
+                  reportValidity: function () { return !this.validationMessage; },
                   appendChild: function (child) { this.children.push(child); },
                   addEventListener: function (_name, cb) { this._listener = cb; }
                 };
+                // Model the browser's single-line input value sanitization.
+                Object.defineProperty(element, "value", {
+                  get: function () { return this._value || ""; },
+                  set: function (value) {
+                    this._value = String(value);
+                    if (tag === "input" && this.type === "text") {
+                      this._value = this._value.replace(/[\r\n]/g, "");
+                    } else if (tag === "textarea") {
+                      this._value = this._value.replace(/\r\n?/g, "\n");
+                    }
+                  }
+                });
+                return element;
               }
             };
 
-            var Streamlit = {
-              setComponentValue: function (_value) {},
-              setFrameHeight: function (_height) {},
-              setComponentReady: function () {},
-              RENDER_EVENT: "render",
-              events: {
-                addEventListener: function (_event, _cb) {}
+            """
+        )
+        ctx.eval(self.bridge_js)
+        ctx.eval(self.main_js)
+        return ctx
+
+    def _capture_render(self, data):
+        ctx = self._ctx()
+        ctx.eval(
+            """
+            var __emitted; var __emissionCount = 0;
+            window.parent.postMessage = function (message) {
+              __messages.push(message);
+              if (message.type === "streamlit:setComponentValue") {
+                __emitted = message.value;
+                __emissionCount++;
               }
             };
             """
         )
-        ctx.eval(self.main_js)
+        event = {"detail": {"args": {"json_str": json.dumps(data)}}}
+        ctx.eval("onRender(" + json.dumps(event) + ");")
         return ctx
+
+    def _returned_value(self, ctx):
+        value = json.loads(ctx.eval("JSON.stringify(Array.from(__emitted))"))
+        return json.loads(bytes(value))
+
+    def test_component_transport_is_unambiguous_utf8_bytes(self):
+        for value in [
+            "plain text",
+            "null",
+            "123",
+            "caf\u00e9 \U0001f642",
+            "\ud800",
+            None,
+            True,
+            {"id": 9007199254740993},
+        ]:
+            with self.subTest(value=value):
+                ctx = self._capture_render(value)
+                self.assertEqual(
+                    ctx.eval("__messages[__messages.length - 1].dataType"), "bytes"
+                )
+                self.assertTrue(ctx.eval("__emitted instanceof Uint8Array"))
+                self.assertEqual(self._returned_value(ctx), value)
+
+    def test_large_integers_round_trip_without_changing_strings(self):
+        data = {
+            "positive": 9007199254740993,
+            "negative": -9007199254740993,
+            "huge": 10**100 + 123,
+            "nested": [9007199254740991, {"id": 9007199254740992}],
+            "strings": [
+                "9007199254740993",
+                'quoted "9007199254740993"',
+                "\\9007199254740993",
+            ],
+            "9007199254740993": True,
+            "__proto__": {"id": 9007199254740993},
+            "decimal": 1.25,
+            "nothing": None,
+        }
+        self.assertEqual(self._returned_value(self._capture_render(data)), data)
+
+    def test_large_integer_root_round_trip(self):
+        value = -(10**100 + 123)
+        self.assertEqual(self._returned_value(self._capture_render(value)), value)
+
+    def test_number_edits_preserve_large_integer_digits(self):
+        for original, edited in [
+            (9007199254740993, "9007199254740995"),
+            (12, "-9007199254740993"),
+            (9007199254740993, "42"),
+        ]:
+            with self.subTest(original=original, edited=edited):
+                ctx = self._capture_render({"id": original})
+                ctx.eval("var __draft = " + json.dumps(edited) + ";")
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.id, function (v) {
+                        editorState.data.id = v;
+                      });
+                      var input = row.children[0];
+                      var initial = input.value;
+                      input.value = __draft;
+                      input._listener();
+                      return { initial: initial };
+                    })())
+                """
+                    )
+                )
+                self.assertEqual(result["initial"], str(original))
+                self.assertEqual(self._returned_value(ctx), {"id": int(edited)})
+
+    def test_parse_loose_primitive_preserves_large_integers(self):
+        ctx = self._ctx()
+        self.assertEqual(
+            ctx.eval('String(parseLoosePrimitive("9007199254740993"))'),
+            "9007199254740993",
+        )
 
     def test_parse_loose_primitive_all_primitives(self):
         ctx = self._ctx()
@@ -68,6 +188,140 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(ctx.eval('parseLoosePrimitive("3.5")'), 3.5)
         self.assertEqual(ctx.eval('parseLoosePrimitive("hello")'), "hello")
         self.assertEqual(ctx.eval('parseLoosePrimitive("   ")'), "   ")
+
+    def test_null_edits_reject_non_finite_numbers_and_recover(self):
+        for draft in ["Infinity", "-Infinity", "+Infinity", "1e999", "-1e999"]:
+            for recovery, expected in [
+                ("0", 0),
+                ("-2.5", -2.5),
+                ("1e3", 1000),
+                ("9007199254740993", 9007199254740993),
+                ("true", True),
+                ("null", None),
+                ("hello", "hello"),
+                ("", ""),
+            ]:
+                with self.subTest(draft=draft, recovery=recovery):
+                    ctx = self._capture_render({"value": None})
+                    ctx.eval("var __draft = " + json.dumps(draft) + ";")
+                    ctx.eval("""
+                        var row = document.createElement("div");
+                        renderPrimitiveControl(row, null, function (v) {
+                          editorState.data.value = v;
+                        });
+                        var input = row.children[0];
+                        input.value = __draft;
+                        input._listener();
+                    """)
+                    self.assertIsNone(ctx.eval("editorState.data.value"))
+                    self.assertEqual(self._returned_value(ctx), {"value": None})
+                    self.assertEqual(ctx.eval("__emissionCount"), 1)
+                    self.assertTrue(ctx.eval("input.validationMessage"))
+                    ctx.eval(
+                        "input.value = " + json.dumps(recovery) + "; input._listener();"
+                    )
+                    self.assertEqual(self._returned_value(ctx), {"value": expected})
+                    self.assertEqual(ctx.eval("__emissionCount"), 2)
+                    self.assertEqual(ctx.eval("input.validationMessage"), "")
+
+    def test_invalid_numeric_edits_keep_last_value_and_report_error(self):
+        for original in [12, 0, -1.5, 9007199254740993]:
+            for draft in ["", "   ", "invalid", "Infinity", "1e999", "0x10"]:
+                with self.subTest(original=original, draft=draft):
+                    ctx = self._capture_render({"count": original})
+                    ctx.eval("var __draft = " + json.dumps(draft) + ";")
+                    result = json.loads(
+                        ctx.eval(
+                            """
+                        JSON.stringify((function () {
+                          var row = document.createElement("div");
+                          renderPrimitiveControl(row, editorState.data.count, function (v) {
+                            editorState.data.count = v;
+                          });
+                          var input = row.children[0];
+                          input.value = __draft;
+                          input._listener();
+                          return { error: input.validationMessage, emissions: __emissionCount };
+                        })())
+                    """
+                        )
+                    )
+                    self.assertEqual(self._returned_value(ctx), {"count": original})
+                    self.assertEqual(result["emissions"], 1)
+                    self.assertTrue(result["error"])
+
+    def test_numeric_edit_recovers_after_empty_draft(self):
+        for text, expected in [("0", 0), ("-2.5", -2.5), ("1e3", 1000), (".5", 0.5)]:
+            with self.subTest(text=text):
+                ctx = self._capture_render({"count": 7})
+                ctx.eval("var __draft = " + json.dumps(text) + ";")
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.count, function (v) {
+                        editorState.data.count = v;
+                      });
+                      var input = row.children[0];
+                      input.value = "";
+                      input._listener();
+                      input.value = __draft;
+                      input._listener();
+                      return { error: input.validationMessage, emissions: __emissionCount };
+                    })())
+                """
+                    )
+                )
+                self.assertEqual(self._returned_value(ctx), {"count": expected})
+                self.assertEqual(result["emissions"], 2)
+                self.assertEqual(result["error"], "")
+
+    def test_multiline_strings_keep_breaks_when_displayed_and_edited(self):
+        for original in [
+            "first\nsecond",
+            "\nfirst\n\nlast\n",
+            'quote " and \\\nnext',
+            "first",
+        ]:
+            with self.subTest(original=original):
+                ctx = self._capture_render({"note": original})
+                edited = original + "\nthird"
+                ctx.eval("var __draft = " + json.dumps(edited) + ";")
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.note, function (v) {
+                        editorState.data.note = v;
+                      });
+                      var input = row.children[0];
+                      var initial = input.value;
+                      input.value = __draft;
+                      input._listener();
+                      return { initial: initial };
+                    })())
+                """
+                    )
+                )
+                self.assertEqual(result["initial"], original)
+                self.assertEqual(self._returned_value(ctx), {"note": edited})
+
+    def test_readonly_multiline_string_keeps_breaks(self):
+        ctx = self._capture_render({"note": "first\nsecond"})
+        result = json.loads(
+            ctx.eval("""
+            JSON.stringify((function () {
+              editorState.valueEditable = false;
+              var row = document.createElement("div");
+              renderPrimitiveControl(row, editorState.data.note, function () {});
+              return { value: row.children[0].value, disabled: row.children[0].disabled };
+            })())
+        """)
+        )
+        self.assertEqual(result["value"], "first\nsecond")
+        self.assertTrue(result["disabled"])
 
     def test_create_boolean_select_shape(self):
         ctx = self._ctx()
@@ -146,6 +400,50 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(calls[1], ["boolean", True, True])
         self.assertEqual(calls[2], ["text", "abc", "json-value json-value-text", True])
         self.assertEqual(calls[3], ["text", "null", "json-value json-value-text", True])
+
+    def test_rename_to_proto_keeps_value_and_object_prototype(self):
+        for value in [{"enabled": True}, [1, 2], 123, "text", None]:
+            with self.subTest(value=value):
+                ctx = self._capture_render({"old": value, "untouched": 7})
+                result = json.loads(
+                    ctx.eval("""
+                    JSON.stringify((function () {
+                      editorState.keyEditable = true;
+                      var obj = editorState.data;
+                      var prototype = Object.getPrototypeOf(obj);
+                      var container = document.createElement("div");
+                      renderObject(container, obj, 0);
+                      var input = container.children[1].children[0];
+                      input.value = "__proto__";
+                      input._listener();
+                      return {
+                        samePrototype: Object.getPrototypeOf(obj) === prototype,
+                        ownsKey: Object.prototype.hasOwnProperty.call(obj, "__proto__"),
+                        hasOldKey: Object.prototype.hasOwnProperty.call(obj, "old")
+                      };
+                    })())
+                """)
+                )
+                self.assertTrue(result["samePrototype"])
+                self.assertTrue(result["ownsKey"])
+                self.assertFalse(result["hasOldKey"])
+                self.assertEqual(
+                    self._returned_value(ctx), {"__proto__": value, "untouched": 7}
+                )
+
+    def test_rename_does_not_overwrite_existing_proto_property(self):
+        data = {"old": 1, "__proto__": {"enabled": True}}
+        ctx = self._capture_render(data)
+        ctx.eval("""
+            editorState.keyEditable = true;
+            var container = document.createElement("div");
+            renderObject(container, editorState.data, 0);
+            var input = container.children[1].children[0];
+            input.value = "__proto__";
+            input._listener();
+        """)
+        self.assertEqual(self._returned_value(ctx), data)
+        self.assertEqual(ctx.eval("input.value"), "old")
 
     def test_render_object_key_rename_updates_underlying_object(self):
         ctx = self._ctx()

@@ -1,0 +1,7 @@
+# Match the package's declared minimum Python version in setup.py.
+target-version = "py37"
+required-version = "==0.17.0"
+
+[lint.pyupgrade]
+# Keep annotations evaluable at runtime on Python 3.7.
+keep-runtime-typing = true
