@@ -218,6 +218,50 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(calls[2], ["text", "abc", "json-value json-value-text", True])
         self.assertEqual(calls[3], ["text", "null", "json-value json-value-text", True])
 
+    def test_rename_to_proto_keeps_value_and_object_prototype(self):
+        for value in [{"enabled": True}, [1, 2], 123, "text", None]:
+            with self.subTest(value=value):
+                ctx = self._capture_render({"old": value, "untouched": 7})
+                result = json.loads(
+                    ctx.eval("""
+                    JSON.stringify((function () {
+                      editorState.keyEditable = true;
+                      var obj = editorState.data;
+                      var prototype = Object.getPrototypeOf(obj);
+                      var container = document.createElement("div");
+                      renderObject(container, obj, 0);
+                      var input = container.children[1].children[0];
+                      input.value = "__proto__";
+                      input._listener();
+                      return {
+                        samePrototype: Object.getPrototypeOf(obj) === prototype,
+                        ownsKey: Object.prototype.hasOwnProperty.call(obj, "__proto__"),
+                        hasOldKey: Object.prototype.hasOwnProperty.call(obj, "old")
+                      };
+                    })())
+                """)
+                )
+                self.assertTrue(result["samePrototype"])
+                self.assertTrue(result["ownsKey"])
+                self.assertFalse(result["hasOldKey"])
+                self.assertEqual(
+                    self._returned_value(ctx), {"__proto__": value, "untouched": 7}
+                )
+
+    def test_rename_does_not_overwrite_existing_proto_property(self):
+        data = {"old": 1, "__proto__": {"enabled": True}}
+        ctx = self._capture_render(data)
+        ctx.eval("""
+            editorState.keyEditable = true;
+            var container = document.createElement("div");
+            renderObject(container, editorState.data, 0);
+            var input = container.children[1].children[0];
+            input.value = "__proto__";
+            input._listener();
+        """)
+        self.assertEqual(self._returned_value(ctx), data)
+        self.assertEqual(ctx.eval("input.value"), "old")
+
     def test_render_object_key_rename_updates_underlying_object(self):
         ctx = self._ctx()
 

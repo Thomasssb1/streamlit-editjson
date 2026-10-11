@@ -231,7 +231,14 @@ function renderObject(container, obj, indentLevel) {
         return;
       }
 
-      obj[nextKey] = obj[currentKey];
+      // Define an own data property: assignment to __proto__ would invoke
+      // Object.prototype's setter and discard the renamed JSON entry.
+      Object.defineProperty(obj, nextKey, {
+        value: obj[currentKey],
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       delete obj[currentKey];
       currentKey = nextKey;
 
