@@ -3,6 +3,10 @@
 
 A Streamlit component to view and edit JSON with a user-friendly UI.
 
+![JSON editor showing nested settings, boolean controls, type dropdowns, hex colour previews, and Copy JSON](https://raw.githubusercontent.com/Thomasssb1/streamlit-editjson/75d744722f4dc03998f34dfcf01e403eda54a9fe/docs/images/example.png)
+
+The bundled example, with collapsible objects, editable values, and colour previews.
+
 ## Installation
 
 ```sh
