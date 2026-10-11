@@ -175,3 +175,39 @@ class TestFrontendView(unittest.TestCase):
             )
         )
         self.assertEqual(result, [{"readonly": True, "disabled": False}] * 3)
+
+    def test_hex_previews_accept_only_complete_css_hex_strings(self):
+        valid = ["#abc", "#AbC8", "#123456", "#aAbBcC80"]
+        invalid = [
+            "#12",
+            "#12345",
+            "#1234567",
+            "#ggg",
+            " #abc ",
+            "text #abc",
+            "rgb(0,0,0)",
+        ]
+        ctx = self._ctx(valid + invalid)
+        result = json.loads(
+            ctx.eval(
+                'JSON.stringify(findAll(container, "json-color").filter(e => !e.hidden).map(e => e.getAttribute("aria-label")))'
+            )
+        )
+        self.assertEqual(result, ["Colour preview " + colour for colour in valid])
+        self.assertEqual(self.harness._returned_value(ctx), valid + invalid)
+
+    def test_hex_preview_tracks_drafts_without_saving_or_normalizing(self):
+        ctx = self._ctx({"colour": "#abc"})
+        ctx.eval(
+            'var input = findAll(container, "json-value")[0]; var swatch = findAll(container, "json-color")[0];'
+        )
+        ctx.eval('input.value = "#xx"; input.dispatchEvent({type: "input"});')
+        self.assertTrue(ctx.eval("swatch.hidden"))
+        self.assertEqual(ctx.eval("__emissionCount"), 1)
+        ctx.eval('input.value = "#AbCd"; input.dispatchEvent({type: "input"});')
+        self.assertFalse(ctx.eval("swatch.hidden"))
+        self.assertEqual(
+            ctx.eval('swatch.getAttribute("aria-label")'), "Colour preview #AbCd"
+        )
+        ctx.eval('input.dispatchEvent({type: "change"});')
+        self.assertEqual(self.harness._returned_value(ctx), {"colour": "#AbCd"})

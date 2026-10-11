@@ -134,3 +134,17 @@ textarea.json-value-text { resize: vertical; }
 #root[data-theme="dark"] .json-value-boolean[data-value="true"] { color: #93e5bc; background: #163b30; }
 #root[data-theme="dark"] .json-value-boolean[data-value="false"] { color: #fdba9a; background: #492d26; }
 @media (max-width: 420px) { .json-type { font-size: 9px; } .json-field { column-gap: 4px; } }
+
+.json-color {
+  position: relative;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 5px 5px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--json-muted);
+  border-radius: 4px;
+  background: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 0 0 / 8px 8px;
+}
+.json-color-fill { position: absolute; inset: 0; }
+[hidden] { display: none !important; }

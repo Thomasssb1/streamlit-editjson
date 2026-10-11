@@ -161,6 +161,25 @@ function emitChange() {
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
+function createColourPreview(input) {
+  const swatch = document.createElement("span");
+  swatch.className = "json-color";
+  swatch.setAttribute("role", "img");
+  const fill = document.createElement("span");
+  fill.className = "json-color-fill";
+  swatch.appendChild(fill);
+  const update = () => {
+    const valid = /^#(?:[a-f0-9]{3}|[a-f0-9]{4}|[a-f0-9]{6}|[a-f0-9]{8})$/i.test(input.value);
+    swatch.hidden = !valid;
+    fill.style.backgroundColor = valid ? input.value : "transparent";
+    swatch.setAttribute("aria-label", valid ? `Colour preview ${input.value}` : "Colour preview");
+    swatch.title = valid ? input.value : "";
+  };
+  input.addEventListener("input", update);
+  update();
+  return swatch;
+}
+
 function presentValue(parentRow, input, valueType) {
   const type = valueType === "bigint" ? "number" : valueType;
   const field = document.createElement("div");
@@ -172,7 +191,10 @@ function presentValue(parentRow, input, valueType) {
     mark.setAttribute("aria-hidden", "true");
     return mark;
   };
-  if (type === "string") control.appendChild(quote());
+  if (type === "string") {
+    control.appendChild(createColourPreview(input));
+    control.appendChild(quote());
+  }
   control.appendChild(input);
   if (type === "string") control.appendChild(quote());
   field.appendChild(control);
@@ -284,7 +306,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   toggle.className = "json-toggle";
   row.insertBefore(toggle, row.children[0] || null);
   row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
-  const closed = createLabel(isArray ? "Ã¢â‚¬Â¦ ]" : "Ã¢â‚¬Â¦ }", "json-collapsed-end json-punct");
+  const closed = createLabel(isArray ? "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ]" : "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
 

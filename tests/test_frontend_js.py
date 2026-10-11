@@ -189,7 +189,7 @@ class TestFrontendJS(unittest.TestCase):
                       var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { initial: initial };
                     })())
                 """
@@ -238,14 +238,16 @@ class TestFrontendJS(unittest.TestCase):
                         });
                         var input = findByClass(row, "json-value")[0];
                         input.value = __draft;
-                        input._listener();
+                        input.dispatchEvent({type: "change"});
                     """)
                     self.assertIsNone(ctx.eval("editorState.data.value"))
                     self.assertEqual(self._returned_value(ctx), {"value": None})
                     self.assertEqual(ctx.eval("__emissionCount"), 1)
                     self.assertTrue(ctx.eval("input.validationMessage"))
                     ctx.eval(
-                        "input.value = " + json.dumps(recovery) + "; input._listener();"
+                        "input.value = "
+                        + json.dumps(recovery)
+                        + '; input.dispatchEvent({type: "change"});'
                     )
                     self.assertEqual(self._returned_value(ctx), {"value": expected})
                     self.assertEqual(ctx.eval("__emissionCount"), 2)
@@ -267,7 +269,7 @@ class TestFrontendJS(unittest.TestCase):
                           });
                           var input = findByClass(row, "json-value")[0];
                           input.value = __draft;
-                          input._listener();
+                          input.dispatchEvent({type: "change"});
                           return { error: input.validationMessage, emissions: __emissionCount };
                         })())
                     """
@@ -292,9 +294,9 @@ class TestFrontendJS(unittest.TestCase):
                       });
                       var input = findByClass(row, "json-value")[0];
                       input.value = "";
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { error: input.validationMessage, emissions: __emissionCount };
                     })())
                 """
@@ -326,7 +328,7 @@ class TestFrontendJS(unittest.TestCase):
                       var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { initial: initial };
                     })())
                 """
@@ -442,7 +444,7 @@ class TestFrontendJS(unittest.TestCase):
                       renderObject(container, obj, 0);
                       var input = findByClass(container, "json-key")[0];
                       input.value = "__proto__";
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return {
                         samePrototype: Object.getPrototypeOf(obj) === prototype,
                         ownsKey: Object.prototype.hasOwnProperty.call(obj, "__proto__"),
@@ -467,7 +469,7 @@ class TestFrontendJS(unittest.TestCase):
             renderObject(container, editorState.data, 0);
             var input = findByClass(container, "json-key")[0];
             input.value = "__proto__";
-            input._listener();
+            input.dispatchEvent({type: "change"});
         """)
         self.assertEqual(self._returned_value(ctx), data)
         self.assertEqual(ctx.eval("input.value"), "old")
@@ -491,7 +493,7 @@ class TestFrontendJS(unittest.TestCase):
 
                   var keyInput = findByClass(container, "json-key")[0];
                   keyInput.value = "new_key";
-                  keyInput._listener();
+                  keyInput.dispatchEvent({type: "change"});
 
                   return {
                     hasOldKey: Object.prototype.hasOwnProperty.call(obj, "old_key"),
@@ -526,12 +528,12 @@ class TestFrontendJS(unittest.TestCase):
                   var firstKeyInput = findByClass(container, "json-key")[0];
 
                   firstKeyInput.value = "   ";
-                  firstKeyInput._listener();
+                  firstKeyInput.dispatchEvent({type: "change"});
 
                   var keysAfterEmpty = Object.keys(obj).sort();
 
                   firstKeyInput.value = "second";
-                  firstKeyInput._listener();
+                  firstKeyInput.dispatchEvent({type: "change"});
 
                   var keysAfterCollision = Object.keys(obj).sort();
 
