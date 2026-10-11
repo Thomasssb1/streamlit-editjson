@@ -33,6 +33,8 @@ st.write(value)  # Python dict
 - `key`: optional Streamlit component key.
 
 The component returns the edited JSON object as a Python `dict`.
+Integer values retain their exact digits, including integers outside JavaScript's
+safe-integer range, when loaded, edited, and returned to Python.
 
 ## Testing
 

@@ -35,17 +35,22 @@ def editjson(
     with open(filepath, "r", encoding="utf-8") as f:
         json_obj = json.load(f)
 
+    json_str = json.dumps(json_obj)
     component_value = _component_func(
-        json_str=json.dumps(json_obj),
+        json_str=json_str,
         key_editable=key_editable,
         value_editable=value_editable,
         key=key,
-        default=json_obj,
+        default=json_str,
     )
 
     if component_value is None:
         return json_obj
 
+    # The frontend returns JSON text to preserve integers beyond JavaScript's
+    # safe range. Accept object values from an already-mounted older frontend.
+    if isinstance(component_value, str):
+        return json.loads(component_value)
     return component_value
 
 

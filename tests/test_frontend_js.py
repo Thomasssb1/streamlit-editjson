@@ -58,6 +58,77 @@ class TestFrontendJS(unittest.TestCase):
         ctx.eval(self.main_js)
         return ctx
 
+    def _capture_render(self, data):
+        ctx = self._ctx()
+        ctx.eval(
+            "var __emitted; Streamlit.setComponentValue = function (v) { __emitted = v; };"
+        )
+        event = {"detail": {"args": {"json_str": json.dumps(data)}}}
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        return ctx
+
+    def _returned_value(self, ctx):
+        value = json.loads(ctx.eval("JSON.stringify(__emitted)"))
+        return json.loads(value) if isinstance(value, str) else value
+
+    def test_large_integers_round_trip_without_changing_strings(self):
+        data = {
+            "positive": 9007199254740993,
+            "negative": -9007199254740993,
+            "huge": 10**100 + 123,
+            "nested": [9007199254740991, {"id": 9007199254740992}],
+            "strings": [
+                "9007199254740993",
+                'quoted "9007199254740993"',
+                "\\9007199254740993",
+            ],
+            "9007199254740993": True,
+            "__proto__": {"id": 9007199254740993},
+            "decimal": 1.25,
+            "nothing": None,
+        }
+        self.assertEqual(self._returned_value(self._capture_render(data)), data)
+
+    def test_large_integer_root_round_trip(self):
+        value = -(10**100 + 123)
+        self.assertEqual(self._returned_value(self._capture_render(value)), value)
+
+    def test_number_edits_preserve_large_integer_digits(self):
+        for original, edited in [
+            (9007199254740993, "9007199254740995"),
+            (12, "-9007199254740993"),
+            (9007199254740993, "42"),
+        ]:
+            with self.subTest(original=original, edited=edited):
+                ctx = self._capture_render({"id": original})
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.id, function (v) {
+                        editorState.data.id = v;
+                      });
+                      var input = row.children[0];
+                      var initial = input.value;
+                      input.value = %s;
+                      input._listener();
+                      return { initial: initial };
+                    })())
+                """
+                        % json.dumps(edited)
+                    )
+                )
+                self.assertEqual(result["initial"], str(original))
+                self.assertEqual(self._returned_value(ctx), {"id": int(edited)})
+
+    def test_parse_loose_primitive_preserves_large_integers(self):
+        ctx = self._ctx()
+        self.assertEqual(
+            ctx.eval('String(parseLoosePrimitive("9007199254740993"))'),
+            "9007199254740993",
+        )
+
     def test_parse_loose_primitive_all_primitives(self):
         ctx = self._ctx()
 

@@ -11,6 +11,59 @@ const editorState = {
   valueEditable: true,
 };
 
+// JSON.parse rounds integer tokens before a reviver can see them. Parse a
+// second copy with unsafe integer tokens quoted, then restore only numeric
+// positions as BigInt. Genuine strings (including object keys) stay strings.
+function parseJson(source) {
+  const quoted = source.replace(
+    /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+    (token) => /^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token))
+      ? JSON.stringify(token)
+      : token,
+  );
+  const data = JSON.parse(source);
+  if (quoted === source) {
+    return data;
+  }
+  function restore(value, exact) {
+    if (typeof value === "number" && typeof exact === "string") {
+      return BigInt(exact);
+    }
+    if (value !== null && typeof value === "object") {
+      Object.keys(value).forEach((key) => {
+        value[key] = restore(value[key], exact[key]);
+      });
+    }
+    return value;
+  }
+  return restore(data, JSON.parse(quoted));
+}
+
+// Send JSON text through Streamlit so Python, rather than the browser's
+// number serializer, decodes integer tokens into arbitrary-precision ints.
+function stringifyJson(value) {
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(stringifyJson).join(",") + "]";
+  }
+  if (value !== null && typeof value === "object") {
+    return "{" + Object.keys(value).map((key) =>
+      JSON.stringify(key) + ":" + stringifyJson(value[key]),
+    ).join(",") + "}";
+  }
+  return JSON.stringify(value);
+}
+
+function parseNumber(text) {
+  const trimmed = text.trim();
+  if (/^-?\d+$/.test(trimmed) && !Number.isSafeInteger(Number(trimmed))) {
+    return BigInt(trimmed);
+  }
+  return Number(trimmed);
+}
+
 function createLabel(text, className) {
   const node = document.createElement("span");
   node.className = className;
@@ -30,9 +83,10 @@ function createTextInput(value, className, editable) {
 function createNumberInput(value, editable) {
   const input = document.createElement("input");
   input.className = "json-value json-value-number";
-  input.type = "number";
+  input.type = typeof value === "bigint" ? "text" : "number";
+  input.inputMode = "decimal";
   input.step = "any";
-  input.value = Number.isFinite(value) ? String(value) : "0";
+  input.value = String(value);
   input.disabled = !editable;
   return input;
 }
@@ -69,7 +123,7 @@ function parseLoosePrimitive(text) {
     return false;
   }
 
-  const asNumber = Number(trimmed);
+  const asNumber = parseNumber(trimmed);
   if (trimmed !== "" && !Number.isNaN(asNumber)) {
     return asNumber;
   }
@@ -78,7 +132,7 @@ function parseLoosePrimitive(text) {
 }
 
 function emitChange() {
-  Streamlit.setComponentValue(editorState.data);
+  Streamlit.setComponentValue(stringifyJson(editorState.data));
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
@@ -86,10 +140,10 @@ function renderPrimitiveControl(parentRow, value, onChange) {
   const editable = editorState.valueEditable;
   const valueType = value === null ? "null" : typeof value;
 
-  if (valueType === "number") {
+  if (valueType === "number" || valueType === "bigint") {
     const input = createNumberInput(value, editable);
     input.addEventListener("change", () => {
-      onChange(Number(input.value));
+      onChange(parseNumber(input.value));
       emitChange();
     });
     parentRow.appendChild(input);
@@ -137,7 +191,7 @@ function renderNode(container, value, indentLevel) {
   row.style.marginLeft = `${indentLevel * INDENT_PX}px`;
   renderPrimitiveControl(row, value, (nextValue) => {
     editorState.data = nextValue;
-    Streamlit.setComponentValue(editorState.data);
+    Streamlit.setComponentValue(stringifyJson(editorState.data));
   });
   container.appendChild(row);
 }
@@ -252,7 +306,7 @@ function onRender(event) {
     !editorState.initialized || editorState.sourceJson !== json_str;
 
   if (shouldReset) {
-    editorState.data = JSON.parse(json_str);
+    editorState.data = parseJson(json_str);
     editorState.sourceJson = json_str;
     editorState.initialized = true;
   }
@@ -263,7 +317,7 @@ function onRender(event) {
   renderEditor();
 
   if (shouldReset) {
-    Streamlit.setComponentValue(editorState.data);
+    Streamlit.setComponentValue(stringifyJson(editorState.data));
   }
 }
 

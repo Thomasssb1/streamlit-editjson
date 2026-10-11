@@ -32,9 +32,7 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=None)
 
-        with patch.object(
-            self.streamlit_editjson, "_component_func", mocked_component
-        ):
+        with patch.object(self.streamlit_editjson, "_component_func", mocked_component):
             result = self.streamlit_editjson.editjson(filepath)
 
         self.assertEqual(result, original)
@@ -46,14 +44,34 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=edited)
 
-        with patch.object(
-            self.streamlit_editjson, "_component_func", mocked_component
-        ):
+        with patch.object(self.streamlit_editjson, "_component_func", mocked_component):
             result = self.streamlit_editjson.editjson(
                 filepath, key_editable=True, value_editable=False, key="editor_1"
             )
 
         self.assertEqual(result, edited)
+
+    def test_decodes_exact_json_returned_by_frontend(self):
+        original = {"id": 9007199254740993}
+        edited = {"id": 9007199254740995, "nested": [-9007199254740993]}
+        filepath = self._create_temp_json_file(original)
+        with patch.object(
+            self.streamlit_editjson, "_component_func", return_value=json.dumps(edited)
+        ):
+            self.assertEqual(self.streamlit_editjson.editjson(filepath), edited)
+
+    def test_default_uses_the_same_json_transport_as_frontend(self):
+        for original in [{"id": 9007199254740993}, "plain text", None]:
+            with self.subTest(original=original):
+                filepath = self._create_temp_json_file(original)
+                with patch.object(
+                    self.streamlit_editjson,
+                    "_component_func",
+                    side_effect=lambda **kw: kw["default"],
+                ):
+                    self.assertEqual(
+                        self.streamlit_editjson.editjson(filepath), original
+                    )
 
     def test_passes_expected_arguments_to_component(self):
         original = {"enabled": True, "count": 3}
@@ -61,9 +79,7 @@ class TestEditJson(unittest.TestCase):
 
         mocked_component = Mock(return_value=None)
 
-        with patch.object(
-            self.streamlit_editjson, "_component_func", mocked_component
-        ):
+        with patch.object(self.streamlit_editjson, "_component_func", mocked_component):
             self.streamlit_editjson.editjson(filepath)
 
         _, kwargs = mocked_component.call_args
@@ -72,7 +88,7 @@ class TestEditJson(unittest.TestCase):
         self.assertEqual(kwargs["key_editable"], False)
         self.assertEqual(kwargs["value_editable"], True)
         self.assertIsNone(kwargs["key"])
-        self.assertEqual(kwargs["default"], original)
+        self.assertEqual(kwargs["default"], json.dumps(original))
 
 
 if __name__ == "__main__":
