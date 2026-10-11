@@ -40,19 +40,20 @@ function parseJson(source) {
 
 // Send JSON text through Streamlit so Python, rather than the browser's
 // number serializer, decodes integer tokens into arbitrary-precision ints.
-function stringifyJson(value) {
-  if (typeof value === "bigint") {
-    return value.toString();
-  }
-  if (Array.isArray(value)) {
-    return "[" + value.map(stringifyJson).join(",") + "]";
-  }
-  if (value !== null && typeof value === "object") {
-    return "{" + Object.keys(value).map((key) =>
-      JSON.stringify(key) + ":" + stringifyJson(value[key]),
-    ).join(",") + "}";
-  }
-  return JSON.stringify(value);
+function stringifyJson(value, pretty = false, depth = 0) {
+  if (typeof value === "bigint") return value.toString();
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  const array = Array.isArray(value);
+  const entries = array
+    ? value.map((item) => stringifyJson(item, pretty, depth + 1))
+    : Object.keys(value).map((key) =>
+      JSON.stringify(key) + (pretty ? ": " : ":") + stringifyJson(value[key], pretty, depth + 1),
+    );
+  const open = array ? "[" : "{";
+  const close = array ? "]" : "}";
+  if (!pretty || entries.length === 0) return open + entries.join(",") + close;
+  const indent = "  ".repeat(depth + 1);
+  return open + "\n" + indent + entries.join(",\n" + indent) + "\n" + "  ".repeat(depth) + close;
 }
 
 function parseNumber(text) {
@@ -156,7 +157,46 @@ function sendValue() {
   Streamlit.setComponentValue(new TextEncoder().encode(stringifyJson(editorState.data)));
 }
 
+let copyButtonReady = false;
+
+function resetCopyStatus() {
+  document.getElementById("copy-status").textContent = "";
+  document.getElementById("copy-fallback").hidden = true;
+}
+
+async function copyJson() {
+  const text = stringifyJson(editorState.data, true);
+  const button = document.getElementById("copy-json");
+  const status = document.getElementById("copy-status");
+  const fallback = document.getElementById("copy-fallback");
+  resetCopyStatus();
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (text === stringifyJson(editorState.data, true)) status.textContent = "Copied JSON";
+  } catch (_) {
+    if (text === stringifyJson(editorState.data, true)) {
+      status.textContent = "Clipboard unavailable. Select the JSON below and copy it.";
+      fallback.value = text;
+      fallback.hidden = false;
+      fallback.focus();
+      fallback.select();
+    }
+  } finally {
+    button.disabled = false;
+    Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  }
+}
+
+function setupCopyButton() {
+  if (copyButtonReady) return;
+  document.getElementById("copy-json").addEventListener("click", copyJson);
+  copyButtonReady = true;
+  resetCopyStatus();
+}
+
 function emitChange() {
+  resetCopyStatus();
   sendValue();
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
@@ -306,7 +346,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   toggle.className = "json-toggle";
   row.insertBefore(toggle, row.children[0] || null);
   row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
-  const closed = createLabel(isArray ? "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ]" : "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ }", "json-collapsed-end json-punct");
+  const closed = createLabel(isArray ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ ]" : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
 
@@ -430,6 +470,7 @@ function renderArray(container, arr, indentLevel, openingRow = null) {
 }
 
 function renderEditor() {
+  setupCopyButton();
   const jsonContainer = document.getElementById("json-container");
   jsonContainer.innerHTML = "";
   renderNode(jsonContainer, editorState.data, 0);
@@ -464,6 +505,7 @@ function onRender(event) {
   renderEditor();
 
   if (shouldReset) {
+    resetCopyStatus();
     sendValue();
   }
 }

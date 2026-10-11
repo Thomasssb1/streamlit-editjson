@@ -211,3 +211,65 @@ class TestFrontendView(unittest.TestCase):
         )
         ctx.eval('input.dispatchEvent({type: "change"});')
         self.assertEqual(self.harness._returned_value(ctx), {"colour": "#AbCd"})
+
+    def test_copy_json_preserves_large_integers_and_current_edits(self):
+        ctx = self._ctx(
+            {"id": 9007199254740993, "values": [None, "hello\nworld"], "empty": {}}
+        )
+        ctx.eval("""
+            var navigator = {clipboard: {writeText: function (text) {
+              window.copied = text;
+              return Promise.resolve();
+            }}};
+            editorState.data.values[0] = true;
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        copied = ctx.eval("window.copied")
+        self.assertEqual(
+            json.loads(copied),
+            {"id": 9007199254740993, "values": [True, "hello\nworld"], "empty": {}},
+        )
+        self.assertIn('\n  "id": 9007199254740993', copied)
+        self.assertEqual(
+            ctx.eval('document.getElementById("copy-status").textContent'),
+            "Copied JSON",
+        )
+        self.assertEqual(ctx.eval("__emissionCount"), 1)
+
+    def test_clipboard_failure_offers_selectable_exact_json(self):
+        for mode in ["unavailable", "denied"]:
+            with self.subTest(mode=mode):
+                ctx = self._ctx({"id": -9007199254740993})
+                ctx.eval(
+                    "var navigator = {};"
+                    if mode == "unavailable"
+                    else 'var navigator = {clipboard: {writeText: function () { return Promise.reject(new Error("denied")); }}};'
+                )
+                ctx.eval(
+                    'document.getElementById("copy-json").dispatchEvent({type: "click"});'
+                )
+                self.assertFalse(
+                    ctx.eval('document.getElementById("copy-fallback").hidden')
+                )
+                self.assertEqual(
+                    json.loads(
+                        ctx.eval('document.getElementById("copy-fallback").value')
+                    ),
+                    {"id": -9007199254740993},
+                )
+                self.assertIn(
+                    "copy",
+                    ctx.eval(
+                        'document.getElementById("copy-status").textContent'
+                    ).lower(),
+                )
+                self.assertFalse(
+                    ctx.eval('document.getElementById("copy-json").disabled')
+                )
+                ctx.eval("emitChange();")
+                self.assertTrue(
+                    ctx.eval('document.getElementById("copy-fallback").hidden')
+                )
+                self.assertEqual(
+                    ctx.eval('document.getElementById("copy-status").textContent'), ""
+                )
