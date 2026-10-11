@@ -32,13 +32,18 @@ class TestFrontendJS(unittest.TestCase):
               var utf8 = unescape(encodeURIComponent(text));
               return Uint8Array.from(utf8, function (c) { return c.charCodeAt(0); });
             };
+            function findByClass(node, className) {
+              var found = (node.className || "").split(" ").includes(className) ? [node] : [];
+              return found.concat((node.children || []).flatMap(function (child) {
+                return findByClass(child, className);
+              }));
+            }
             var document = {
               body: { scrollHeight: 120 },
-              getElementById: function () {
-                return {
-                  innerHTML: "",
-                  appendChild: function () {}
-                };
+              getElementById: function (id) {
+                if (!this.nodes) this.nodes = {};
+                if (!this.nodes[id]) this.nodes[id] = this.createElement("div");
+                return this.nodes[id];
               },
               createElement: function (tag) {
                 var element = {
@@ -50,13 +55,35 @@ class TestFrontendJS(unittest.TestCase):
                   disabled: false,
                   textContent: "",
                   style: {},
+                  hidden: false,
+                  attributes: {},
+                  listeners: {},
+                  setAttribute: function (name, value) { this.attributes[name] = String(value); },
+                  getAttribute: function (name) { return this.attributes[name] || null; },
+                  removeAttribute: function (name) { delete this.attributes[name]; },
                   children: [],
                   validationMessage: "",
                   setCustomValidity: function (message) { this.validationMessage = message; },
                   reportValidity: function () { return !this.validationMessage; },
-                  appendChild: function (child) { this.children.push(child); },
-                  addEventListener: function (_name, cb) { this._listener = cb; }
+                  appendChild: function (child) { this.children.push(child); child.parentElement = this; },
+                  insertBefore: function (child, before) {
+                    var index = this.children.indexOf(before);
+                    this.children.splice(index < 0 ? this.children.length : index, 0, child);
+                    child.parentElement = this;
+                  },
+                  addEventListener: function (name, cb) {
+                    if (!this.listeners[name]) this.listeners[name] = [];
+                    this.listeners[name].push(cb);
+                    this._listener = () => this.dispatchEvent({type: name});
+                  },
+                  dispatchEvent: function (event) {
+                    (this.listeners[event.type] || []).forEach(cb => cb(event));
+                  }
                 };
+                Object.defineProperty(element, "innerHTML", {
+                  get: function () { return ""; },
+                  set: function () { this.children = []; }
+                });
                 // Model the browser's single-line input value sanitization.
                 Object.defineProperty(element, "value", {
                   get: function () { return this._value || ""; },
@@ -413,7 +440,7 @@ class TestFrontendJS(unittest.TestCase):
                       var prototype = Object.getPrototypeOf(obj);
                       var container = document.createElement("div");
                       renderObject(container, obj, 0);
-                      var input = container.children[1].children[0];
+                      var input = findByClass(container, "json-key")[0];
                       input.value = "__proto__";
                       input._listener();
                       return {
@@ -438,7 +465,7 @@ class TestFrontendJS(unittest.TestCase):
             editorState.keyEditable = true;
             var container = document.createElement("div");
             renderObject(container, editorState.data, 0);
-            var input = container.children[1].children[0];
+            var input = findByClass(container, "json-key")[0];
             input.value = "__proto__";
             input._listener();
         """)
@@ -462,7 +489,7 @@ class TestFrontendJS(unittest.TestCase):
 
                   renderObject(container, obj, 0);
 
-                  var keyInput = container.children[1].children[0];
+                  var keyInput = findByClass(container, "json-key")[0];
                   keyInput.value = "new_key";
                   keyInput._listener();
 
@@ -496,7 +523,7 @@ class TestFrontendJS(unittest.TestCase):
                   };
 
                   renderObject(container, obj, 0);
-                  var firstKeyInput = container.children[1].children[0];
+                  var firstKeyInput = findByClass(container, "json-key")[0];
 
                   firstKeyInput.value = "   ";
                   firstKeyInput._listener();

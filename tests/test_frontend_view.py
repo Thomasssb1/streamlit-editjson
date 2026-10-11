@@ -45,3 +45,73 @@ class TestFrontendView(unittest.TestCase):
                 )
                 self.assertIn("{", result)
                 self.assertEqual(self.harness._returned_value(ctx), data)
+
+    def test_collections_toggle_without_emitting_or_changing_data(self):
+        for data in [{"child": {"id": 9007199254740993}}, [[1, 2], []], {}, []]:
+            with self.subTest(data=data):
+                ctx = self._ctx(data)
+                result = json.loads(
+                    ctx.eval("""
+                    JSON.stringify((function () {
+                      var toggle = findAll(container, "json-toggle")[0];
+                      var body = findAll(container, "json-children")[0];
+                      var before = toggle.getAttribute("aria-expanded");
+                      toggle.dispatchEvent({type: "click"});
+                      var collapsed = body.hidden && toggle.getAttribute("aria-expanded") === "false";
+                      toggle.dispatchEvent({type: "click"});
+                      return {before: before, collapsed: collapsed, expanded: !body.hidden,
+                        emissions: __emissionCount};
+                    })())
+                """)
+                )
+                self.assertEqual(
+                    result,
+                    {
+                        "before": "true",
+                        "collapsed": True,
+                        "expanded": True,
+                        "emissions": 1,
+                    },
+                )
+                self.assertEqual(self.harness._returned_value(ctx), data)
+
+    def test_nested_collapse_survives_rerender_and_key_rename(self):
+        ctx = self._ctx({"child": {"value": 1}, "other": []})
+        ctx.eval("""
+            findAll(container, "json-toggle")[1].dispatchEvent({type: "click"});
+            editorState.keyEditable = true;
+            container.innerHTML = "";
+            renderNode(container, editorState.data, 0);
+            var key = findAll(container, "json-key")[0];
+            key.value = "renamed";
+            key.dispatchEvent({type: "change"});
+            container.innerHTML = "";
+            renderNode(container, editorState.data, 0);
+        """)
+        self.assertEqual(
+            ctx.eval(
+                'findAll(container, "json-row").find(row => row.children.some(child => child.value === "renamed")).children[0].getAttribute("aria-expanded")'
+            ),
+            "false",
+        )
+        self.assertEqual(
+            self.harness._returned_value(ctx), {"renamed": {"value": 1}, "other": []}
+        )
+
+    def test_new_source_starts_expanded_and_reports_collection_counts(self):
+        ctx = self._ctx({"items": [1, 2]})
+        ctx.eval('findAll(container, "json-toggle")[0].dispatchEvent({type: "click"});')
+        event = {"detail": {"args": {"json_str": json.dumps([1, 2, 3])}}}
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-toggle")[0].getAttribute("aria-expanded")'
+            ),
+            "true",
+        )
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-count")[0].textContent'
+            ),
+            "3 items",
+        )

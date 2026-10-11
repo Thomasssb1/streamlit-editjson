@@ -9,6 +9,7 @@ const editorState = {
   data: null,
   keyEditable: false,
   valueEditable: true,
+  collapsed: new WeakSet(),
 };
 
 // JSON.parse rounds integer tokens before a reviver can see them. Parse a
@@ -219,7 +220,7 @@ function renderPrimitiveControl(parentRow, value, onChange) {
 
 function renderNode(container, value, indentLevel, openingRow = null) {
   if (Array.isArray(value)) {
-    renderArray(container, value, indentLevel);
+    renderArray(container, value, indentLevel, openingRow);
     return;
   }
 
@@ -238,14 +239,56 @@ function renderNode(container, value, indentLevel, openingRow = null) {
   container.appendChild(row);
 }
 
-function renderObject(container, obj, indentLevel, openingRow = null) {
-  const open = createLabel("{", "json-punct");
-  if (openingRow) {
-    openingRow.appendChild(open);
-  } else {
-    open.style.marginLeft = `${indentLevel * INDENT_PX}px`;
-    container.appendChild(open);
+let collectionId = 0;
+
+function createCollection(container, value, indentLevel, openingRow) {
+  const isArray = Array.isArray(value);
+  const count = isArray ? value.length : Object.keys(value).length;
+  const unit = isArray ? (count === 1 ? "item" : "items") : (count === 1 ? "property" : "properties");
+  const kind = isArray ? "array" : "object";
+  const row = openingRow || document.createElement("div");
+  if (!openingRow) {
+    row.className = "json-row";
+    row.style.marginLeft = `${indentLevel * INDENT_PX}px`;
+    container.appendChild(row);
   }
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "json-toggle";
+  row.insertBefore(toggle, row.children[0] || null);
+  row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
+  const closed = createLabel(isArray ? "… ]" : "… }", "json-collapsed-end json-punct");
+  row.appendChild(closed);
+  row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
+
+  const body = document.createElement("div");
+  body.className = "json-children";
+  body.id = `json-collection-${++collectionId}`;
+  toggle.setAttribute("aria-controls", body.id);
+  container.appendChild(body);
+  const update = () => {
+    const collapsed = editorState.collapsed.has(value);
+    toggle.textContent = collapsed ? "\u25b8" : "\u25be";
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${kind}, ${count} ${unit}`);
+    body.hidden = collapsed;
+    closed.hidden = !collapsed;
+  };
+  toggle.addEventListener("click", () => {
+    if (editorState.collapsed.has(value)) {
+      editorState.collapsed.delete(value);
+    } else {
+      editorState.collapsed.add(value);
+    }
+    update();
+    Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  });
+  update();
+  return body;
+}
+
+function renderObject(container, obj, indentLevel, openingRow = null) {
+  container = createCollection(container, obj, indentLevel, openingRow);
 
   const entries = Object.entries(obj);
 
@@ -311,10 +354,8 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
   container.appendChild(close);
 }
 
-function renderArray(container, arr, indentLevel) {
-  const open = createLabel("[", "json-punct");
-  open.style.marginLeft = `${indentLevel * INDENT_PX}px`;
-  container.appendChild(open);
+function renderArray(container, arr, indentLevel, openingRow = null) {
+  container = createCollection(container, arr, indentLevel, openingRow);
 
   arr.forEach((item, index) => {
     const row = document.createElement("div");
@@ -360,6 +401,7 @@ function onRender(event) {
 
   if (shouldReset) {
     editorState.data = parseJson(json_str);
+    editorState.collapsed = new WeakSet();
     editorState.sourceJson = json_str;
     editorState.initialized = true;
   }

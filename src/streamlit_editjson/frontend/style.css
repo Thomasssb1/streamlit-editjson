@@ -78,3 +78,27 @@ textarea.json-value-text {
   font-family: inherit;
   resize: none;
 }
+
+.json-toggle {
+  flex: 0 0 22px;
+  width: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #8aa2c1;
+  font: inherit;
+  cursor: pointer;
+}
+
+.json-toggle:hover,
+.json-toggle:focus-visible {
+  background: #253247;
+  outline: 1px solid #7db3ff;
+}
+
+.json-count {
+  color: #8aa2c1;
+  font-size: 12px;
+  white-space: nowrap;
+}
