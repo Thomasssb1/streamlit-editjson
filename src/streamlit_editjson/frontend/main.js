@@ -217,14 +217,14 @@ function renderPrimitiveControl(parentRow, value, onChange) {
   parentRow.appendChild(input);
 }
 
-function renderNode(container, value, indentLevel) {
+function renderNode(container, value, indentLevel, openingRow = null) {
   if (Array.isArray(value)) {
     renderArray(container, value, indentLevel);
     return;
   }
 
   if (value !== null && typeof value === "object") {
-    renderObject(container, value, indentLevel);
+    renderObject(container, value, indentLevel, openingRow);
     return;
   }
 
@@ -238,10 +238,14 @@ function renderNode(container, value, indentLevel) {
   container.appendChild(row);
 }
 
-function renderObject(container, obj, indentLevel) {
+function renderObject(container, obj, indentLevel, openingRow = null) {
   const open = createLabel("{", "json-punct");
-  open.style.marginLeft = `${indentLevel * INDENT_PX}px`;
-  container.appendChild(open);
+  if (openingRow) {
+    openingRow.appendChild(open);
+  } else {
+    open.style.marginLeft = `${indentLevel * INDENT_PX}px`;
+    container.appendChild(open);
+  }
 
   const entries = Object.entries(obj);
 
@@ -293,7 +297,7 @@ function renderObject(container, obj, indentLevel) {
 
     if (entryValue !== null && typeof entryValue === "object") {
       container.appendChild(row);
-      renderNode(container, entryValue, indentLevel + 1);
+      renderNode(container, entryValue, indentLevel + 1, row);
     } else {
       renderPrimitiveControl(row, entryValue, (nextValue) => {
         obj[currentKey] = nextValue;
@@ -320,7 +324,7 @@ function renderArray(container, arr, indentLevel) {
 
     if (item !== null && typeof item === "object") {
       container.appendChild(row);
-      renderNode(container, item, indentLevel + 1);
+      renderNode(container, item, indentLevel + 1, row);
     } else {
       renderPrimitiveControl(row, item, (nextValue) => {
         arr[index] = nextValue;
