@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setuptools.setup(
     name="streamlit-editjson",
-    version="1.1.0",
+    version="1.1.1",
     author="Thomas Beer",
     author_email="thomas.beer04@outlook.com",
     description="A Streamlit component for viewing and editing JSON",
