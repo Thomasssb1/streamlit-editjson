@@ -131,6 +131,13 @@ function createBooleanSelect(value, editable) {
 
 function parseLoosePrimitive(text) {
   const trimmed = text.trim();
+  if (trimmed.startsWith('"')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (_) {
+      throw new SyntaxError('Enter a complete quoted JSON string, such as "hello", or plain text without quotes.');
+    }
+  }
 
   if (trimmed === "null") {
     return null;
@@ -293,11 +300,28 @@ function presentValue(parentRow, input, valueType, path) {
   field.appendChild(createLabel(type, "json-type"));
   bindFieldError(input, field, "value", path);
   parentRow.appendChild(field);
+  return field;
 }
 
 function renderPrimitiveControl(parentRow, value, onChange, label = "Value", path = []) {
   const editable = editorState.valueEditable;
   const valueType = value === null ? "null" : typeof value;
+  let field;
+  const commitValue = (input, nextValue) => {
+    const focused = document.activeElement === input;
+    const nextType = nextValue === null ? "null" : typeof nextValue;
+    clearFieldError(input);
+    onChange(nextValue);
+    if (nextType !== valueType) {
+      const staging = document.createElement("div");
+      const replacement = renderPrimitiveControl(staging, nextValue, onChange, label, path);
+      parentRow.replaceChild(replacement.field, field);
+      if (focused) replacement.input.focus();
+    } else if (nextType === "number" || nextType === "bigint") {
+      input.title = String(nextValue);
+    }
+    emitChange();
+  };
 
   if (valueType === "number" || valueType === "bigint") {
     const input = createNumberInput(value, editable);
@@ -318,12 +342,10 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value", pat
           : "Enter a finite number, such as 0 or 1.5. The last valid value is kept.");
         return;
       }
-      clearFieldError(input);
-      onChange(nextValue);
-      emitChange();
+      commitValue(input, nextValue);
     });
-    presentValue(parentRow, input, valueType, path);
-    return;
+    field = presentValue(parentRow, input, valueType, path);
+    return {field, input};
   }
 
   if (valueType === "boolean") {
@@ -332,11 +354,10 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value", pat
     select.addEventListener("change", () => {
       if (!editable) return;
       select.setAttribute("data-value", select.value);
-      onChange(select.value === "true");
-      emitChange();
+      commitValue(select, select.value === "true");
     });
-    presentValue(parentRow, select, valueType, path);
-    return;
+    field = presentValue(parentRow, select, valueType, path);
+    return {field, input: select};
   }
 
   const text = value === null ? "null" : String(value);
@@ -350,17 +371,16 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value", pat
     try {
       nextValue = typeof value === "string" ? input.value : parseLoosePrimitive(input.value);
     } catch (error) {
-      if (!(error instanceof RangeError)) {
+      if (!(error instanceof RangeError) && !(error instanceof SyntaxError)) {
         throw error;
       }
       showFieldError(input, error.message);
       return;
     }
-    clearFieldError(input);
-    onChange(nextValue);
-    emitChange();
+    commitValue(input, nextValue);
   });
-  presentValue(parentRow, input, valueType, path);
+  field = presentValue(parentRow, input, valueType, path);
+  return {field, input};
 }
 
 function renderNode(container, value, indentLevel, openingRow = null, path = []) {
@@ -378,7 +398,6 @@ function renderNode(container, value, indentLevel, openingRow = null, path = [])
   row.className = "json-row";
   renderPrimitiveControl(row, value, (nextValue) => {
     editorState.data = nextValue;
-    sendValue();
   }, "Value", path);
   container.appendChild(row);
 }

@@ -68,6 +68,13 @@ class TestFrontendJS(unittest.TestCase):
                   setCustomValidity: function (message) { this.validationMessage = message; },
                   reportValidity: function () { return !this.validationMessage; },
                   appendChild: function (child) { this.children.push(child); child.parentElement = this; },
+                  replaceChild: function (child, old) {
+                    var index = this.children.indexOf(old);
+                    if (index < 0) throw new Error("Child not found");
+                    this.children[index] = child;
+                    child.parentElement = this;
+                    old.parentElement = null;
+                  },
                   insertBefore: function (child, before) {
                     var index = this.children.indexOf(before);
                     this.children.splice(index < 0 ? this.children.length : index, 0, child);

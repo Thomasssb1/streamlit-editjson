@@ -409,3 +409,132 @@ class TestFrontendView(unittest.TestCase):
                     ctx.eval('findAll(container, "json-collapsed-end")[0].textContent'),
                     expected,
                 )
+
+    def test_null_conversion_refreshes_the_control_before_a_rerun(self):
+        cases = [
+            ('"hi"', "hi", "string", "textarea"),
+            ("hello", "hello", "string", "textarea"),
+            ('"first\\nsecond"', "first\nsecond", "string", "textarea"),
+            ("true", True, "boolean", "select"),
+            ("false", False, "boolean", "select"),
+            ("42", 42, "number", "input"),
+            ("9007199254740993", 9007199254740993, "number", "input"),
+        ]
+        for location in ["root", "object", "array"]:
+            for draft, expected, kind, tag in cases:
+                with self.subTest(location=location, draft=draft):
+                    data = (
+                        None
+                        if location == "root"
+                        else {"optional": None}
+                        if location == "object"
+                        else [None]
+                    )
+                    ctx = self._ctx(data)
+                    ctx.eval('var input = findAll(container, "json-value")[0];')
+                    ctx.eval(
+                        "input.value = "
+                        + json.dumps(draft)
+                        + '; input.dispatchEvent({type: "change"});'
+                    )
+                    self.assertEqual(
+                        ctx.eval('findAll(container, "json-type")[0].textContent'), kind
+                    )
+                    self.assertIn(
+                        "json-field-" + kind,
+                        ctx.eval('findAll(container, "json-field")[0].className'),
+                    )
+                    self.assertEqual(
+                        ctx.eval('findAll(container, "json-value")[0].tagName'), tag
+                    )
+                    expected_data = (
+                        expected
+                        if location == "root"
+                        else {"optional": expected}
+                        if location == "object"
+                        else [expected]
+                    )
+                    self.assertEqual(self.harness._returned_value(ctx), expected_data)
+                    self.assertEqual(ctx.eval("__emissionCount"), 2)
+
+    def test_null_to_string_uses_string_editing_for_followup_changes(self):
+        ctx = self._ctx({"optional": None, "other": "unchanged"})
+        ctx.eval("""
+            var other = findAll(container, "json-value")[1];
+            var input = findAll(container, "json-value")[0];
+            input.value = '"hi"';
+            input.dispatchEvent({type: "change"});
+            var updated = findAll(container, "json-value")[0];
+            updated.value = "123";
+            updated.dispatchEvent({type: "change"});
+        """)
+        self.assertEqual(
+            self.harness._returned_value(ctx), {"optional": "123", "other": "unchanged"}
+        )
+        self.assertTrue(ctx.eval('other === findAll(container, "json-value")[1]'))
+        self.assertEqual(
+            ctx.eval('findAll(container, "json-type")[0].textContent'), "string"
+        )
+
+    def test_numeric_storage_changes_refresh_the_numeric_control(self):
+        for original, draft, expected_type, expected in [
+            (1, "9007199254740993", "text", 9007199254740993),
+            (9007199254740993, "1.5", "number", 1.5),
+        ]:
+            with self.subTest(original=original):
+                ctx = self._ctx({"number": original})
+                ctx.eval('var input = findAll(container, "json-value")[0];')
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(draft)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(
+                    ctx.eval('findAll(container, "json-value")[0].type'), expected_type
+                )
+                self.assertEqual(
+                    self.harness._returned_value(ctx), {"number": expected}
+                )
+
+    def test_quoted_strings_are_decoded_only_when_converting_null(self):
+        for initial, draft, expected in [
+            (None, '"null"', "null"),
+            (None, '"123"', "123"),
+            (None, '"say \\"hi\\""', 'say "hi"'),
+            (None, '"#abc"', "#abc"),
+            (None, '""', ""),
+            ("text", '"hi"', '"hi"'),
+            (None, 'say "hi"', 'say "hi"'),
+        ]:
+            with self.subTest(initial=initial, draft=draft):
+                ctx = self._ctx({"value": initial})
+                ctx.eval('var input = findAll(container, "json-value")[0];')
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(draft)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(self.harness._returned_value(ctx), {"value": expected})
+                self.assertEqual(
+                    json.loads(ctx.eval("stringifyJson(editorState.data, true)")),
+                    {"value": expected},
+                )
+
+    def test_invalid_quoted_null_conversion_keeps_null_with_inline_feedback(self):
+        for draft in ['"unfinished', '"bad\\q"', '"first" trailing']:
+            with self.subTest(draft=draft):
+                ctx = self._ctx({"optional": None})
+                ctx.eval('var input = findAll(container, "json-value")[0];')
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(draft)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(self.harness._returned_value(ctx), {"optional": None})
+                self.assertEqual(ctx.eval('input.getAttribute("aria-invalid")'), "true")
+                self.assertIn(
+                    "quoted",
+                    ctx.eval(
+                        'findAll(container, "json-error").filter(e => !e.hidden).map(e => e.textContent).join(" ")'
+                    ),
+                )
