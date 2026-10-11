@@ -37,7 +37,7 @@ class TestFrontendView(unittest.TestCase):
                     JSON.stringify((function () {
                       var key = (Array.isArray(editorState.data) ? findAll(container, "json-index") : findAll(container, "json-key"))[0];
                       var row = findAll(container, "json-row").find(function (row) {
-                        return row.children.includes(key);
+                        return findAll(row, "json-key").includes(key) || row.children.includes(key);
                       });
                       return row.children.map(function (child) { return child.textContent; });
                     })())
@@ -90,7 +90,7 @@ class TestFrontendView(unittest.TestCase):
         """)
         self.assertEqual(
             ctx.eval(
-                'findAll(container, "json-row").find(row => row.children.some(child => child.value === "renamed")).children[0].getAttribute("aria-expanded")'
+                'findAll(container, "json-row").find(row => findAll(row, "json-key").some(child => child.value === "renamed")).children[0].getAttribute("aria-expanded")'
             ),
             "false",
         )
@@ -272,4 +272,140 @@ class TestFrontendView(unittest.TestCase):
                 )
                 self.assertEqual(
                     ctx.eval('document.getElementById("copy-status").textContent'), ""
+                )
+
+    def test_rejected_edits_are_explained_inline_and_clear_on_correction(self):
+        for original, draft, valid in [
+            (3, "", "0"),
+            (9007199254740993, "Infinity", "42"),
+            (None, "1e999", "hello"),
+        ]:
+            with self.subTest(original=original, draft=draft):
+                ctx = self._ctx({"value": original})
+                ctx.eval('var input = findAll(container, "json-value")[0];')
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(draft)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(ctx.eval('input.getAttribute("aria-invalid")'), "true")
+                self.assertTrue(
+                    ctx.eval(
+                        'findAll(container, "json-error").some(e => !e.hidden && e.textContent.length > 0)'
+                    )
+                )
+                self.assertEqual(self.harness._returned_value(ctx), {"value": original})
+                self.assertEqual(ctx.eval("__emissionCount"), 1)
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(valid)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertIsNone(ctx.eval('input.getAttribute("aria-invalid")'))
+                self.assertFalse(
+                    ctx.eval('findAll(container, "json-error").some(e => !e.hidden)')
+                )
+
+    def test_key_rejections_explain_empty_and_duplicate_names(self):
+        for draft, message in [("   ", "empty"), ("second", "already exists")]:
+            with self.subTest(draft=draft):
+                ctx = self._ctx({"first": 1, "second": 2})
+                ctx.eval(
+                    'editorState.keyEditable = true; container.innerHTML = ""; renderNode(container, editorState.data, 0); var input = findAll(container, "json-key")[0];'
+                )
+                ctx.eval(
+                    "input.value = "
+                    + json.dumps(draft)
+                    + '; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(ctx.eval("input.value"), draft)
+                errors = ctx.eval(
+                    'findAll(container, "json-error").filter(e => !e.hidden).map(e => e.textContent).join(" ")'
+                )
+                self.assertIn(message, errors)
+                self.assertEqual(
+                    self.harness._returned_value(ctx), {"first": 1, "second": 2}
+                )
+                ctx.eval(
+                    'input.value = "renamed"; input.dispatchEvent({type: "change"});'
+                )
+                self.assertEqual(
+                    self.harness._returned_value(ctx), {"renamed": 1, "second": 2}
+                )
+                self.assertEqual(ctx.eval("editorState.rejections.size"), 0)
+
+    def test_rejected_drafts_survive_reruns_but_clear_with_new_source(self):
+        ctx = self._ctx({"count": 5})
+        ctx.eval(
+            'var input = findAll(container, "json-value")[0]; input.value = ""; input.dispatchEvent({type: "change"});'
+        )
+        event = {"detail": {"args": {"json_str": json.dumps({"count": 5})}}}
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].value'
+            ),
+            "",
+        )
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].getAttribute("aria-invalid")'
+            ),
+            "true",
+        )
+        event["detail"]["args"]["json_str"] = json.dumps({"count": 7})
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].value'
+            ),
+            "7",
+        )
+        self.assertEqual(ctx.eval("editorState.rejections.size"), 0)
+
+    def test_copy_uses_valid_data_while_a_rejected_draft_is_visible(self):
+        ctx = self._ctx({"count": 5})
+        ctx.eval("""
+            var input = findAll(container, "json-value")[0];
+            input.value = "";
+            input.dispatchEvent({type: "change"});
+            var navigator = {clipboard: {writeText: function (text) {window.copied = text; return Promise.resolve();}}};
+            document.getElementById("copy-json").dispatchEvent({type: "click"});
+        """)
+        self.assertEqual(json.loads(ctx.eval("window.copied")), {"count": 5})
+
+    def test_rejected_child_draft_follows_a_renamed_parent(self):
+        ctx = self._ctx({"parent": {"count": 5}})
+        ctx.eval("""
+            editorState.keyEditable = true;
+            container.innerHTML = "";
+            renderNode(container, editorState.data, 0);
+            var input = findAll(container, "json-value")[0];
+            input.value = "";
+            input.dispatchEvent({type: "change"});
+            var key = findAll(container, "json-key")[0];
+            key.value = "renamed";
+            key.dispatchEvent({type: "change"});
+        """)
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].value'
+            ),
+            "",
+        )
+        self.assertEqual(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].getAttribute("aria-invalid")'
+            ),
+            "true",
+        )
+        self.assertEqual(self.harness._returned_value(ctx), {"renamed": {"count": 5}})
+
+    def test_collapsed_summary_uses_a_readable_ellipsis(self):
+        for data, expected in [({}, "\u2026 }"), ([], "\u2026 ]")]:
+            with self.subTest(data=data):
+                ctx = self._ctx(data)
+                self.assertEqual(
+                    ctx.eval('findAll(container, "json-collapsed-end")[0].textContent'),
+                    expected,
                 )

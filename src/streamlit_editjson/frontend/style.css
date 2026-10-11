@@ -158,3 +158,12 @@ textarea.json-value-text { resize: vertical; }
 .json-copy-status { color: var(--json-muted); font-size: 12px; }
 .json-copy-status:not(:empty) { margin-bottom: 8px; }
 #copy-fallback { width: 100%; min-height: 140px; margin-bottom: 8px; padding: 8px; background: var(--json-bg); color: var(--json-text); border: 1px solid var(--json-border); border-radius: 6px; font: inherit; resize: vertical; }
+
+.json-key-field { flex: 0 1 28%; width: 28%; min-width: 80px; max-width: 180px; }
+.json-key-field .json-key { width: 100%; min-width: 0; max-width: none; }
+.json-error { display: block; grid-column: 1 / -1; color: var(--json-error); font: 12px/1.45 system-ui, sans-serif; overflow-wrap: anywhere; padding: 3px 2px 4px; }
+.json-key[aria-invalid="true"],
+.json-value[aria-invalid="true"],
+.json-key[aria-invalid="true"]:hover,
+.json-value[aria-invalid="true"]:hover { border-color: var(--json-error); }
+@media (max-width: 420px) { .json-key-field { min-width: 64px; } }

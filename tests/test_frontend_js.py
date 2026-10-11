@@ -474,7 +474,7 @@ class TestFrontendJS(unittest.TestCase):
             input.dispatchEvent({type: "change"});
         """)
         self.assertEqual(self._returned_value(ctx), data)
-        self.assertEqual(ctx.eval("input.value"), "old")
+        self.assertEqual(ctx.eval("input.value"), "__proto__")
 
     def test_render_object_key_rename_updates_underlying_object(self):
         ctx = self._ctx()

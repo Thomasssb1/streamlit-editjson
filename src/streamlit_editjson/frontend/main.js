@@ -8,6 +8,7 @@ const editorState = {
   keyEditable: false,
   valueEditable: true,
   collapsed: new WeakSet(),
+  rejections: new Map(),
 };
 
 // JSON.parse rounds integer tokens before a reviver can see them. Parse a
@@ -201,6 +202,57 @@ function emitChange() {
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
+const fieldErrors = new WeakMap();
+let errorId = 0;
+
+function bindFieldError(input, container, kind, path) {
+  const error = createLabel("", "json-error");
+  error.id = `json-error-${++errorId}`;
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  container.appendChild(error);
+  const key = JSON.stringify([kind, ...path]);
+  fieldErrors.set(input, {error, key});
+  if (input.readOnly || input.disabled) {
+    editorState.rejections.delete(key);
+  } else if (editorState.rejections.has(key)) {
+    const rejected = editorState.rejections.get(key);
+    input.value = rejected.value;
+    showFieldError(input, rejected.message);
+  }
+}
+
+function showFieldError(input, message) {
+  const {error, key} = fieldErrors.get(input);
+  error.textContent = message;
+  error.hidden = false;
+  input.setCustomValidity(message);
+  input.setAttribute("aria-invalid", "true");
+  input.setAttribute("aria-describedby", error.id);
+  editorState.rejections.set(key, {value: input.value, message});
+  Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+}
+
+function clearFieldError(input) {
+  const {error, key} = fieldErrors.get(input);
+  error.textContent = "";
+  error.hidden = true;
+  input.setCustomValidity("");
+  input.removeAttribute("aria-invalid");
+  input.removeAttribute("aria-describedby");
+  editorState.rejections.delete(key);
+}
+
+function moveRejectedPaths(oldPath, newPath) {
+  for (const [key, value] of [...editorState.rejections]) {
+    const [kind, ...path] = JSON.parse(key);
+    if (oldPath.every((part, index) => path[index] === part)) {
+      editorState.rejections.delete(key);
+      editorState.rejections.set(JSON.stringify([kind, ...newPath, ...path.slice(oldPath.length)]), value);
+    }
+  }
+}
+
 function createColourPreview(input) {
   const swatch = document.createElement("span");
   swatch.className = "json-color";
@@ -220,7 +272,7 @@ function createColourPreview(input) {
   return swatch;
 }
 
-function presentValue(parentRow, input, valueType) {
+function presentValue(parentRow, input, valueType, path) {
   const type = valueType === "bigint" ? "number" : valueType;
   const field = document.createElement("div");
   field.className = `json-field json-field-${type}`;
@@ -239,10 +291,11 @@ function presentValue(parentRow, input, valueType) {
   if (type === "string") control.appendChild(quote());
   field.appendChild(control);
   field.appendChild(createLabel(type, "json-type"));
+  bindFieldError(input, field, "value", path);
   parentRow.appendChild(field);
 }
 
-function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
+function renderPrimitiveControl(parentRow, value, onChange, label = "Value", path = []) {
   const editable = editorState.valueEditable;
   const valueType = value === null ? "null" : typeof value;
 
@@ -250,25 +303,26 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
     const input = createNumberInput(value, editable);
     input.setAttribute("aria-label", label);
     input.addEventListener("input", () => {
-      input.setCustomValidity("");
       input.style.width = `${Math.max(6, input.value.length + 2)}ch`;
     });
     input.addEventListener("change", () => {
+      if (!editable) return;
       const text = input.value.trim();
       const nextValue = parseNumber(text);
       if (
         !/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) ||
         (typeof nextValue !== "bigint" && !Number.isFinite(nextValue))
       ) {
-        input.setCustomValidity("Enter a finite number. Empty or invalid values are not saved.");
-        input.reportValidity();
+        showFieldError(input, text === ""
+          ? "Enter a number. The last valid value is kept."
+          : "Enter a finite number, such as 0 or 1.5. The last valid value is kept.");
         return;
       }
-      input.setCustomValidity("");
+      clearFieldError(input);
       onChange(nextValue);
       emitChange();
     });
-    presentValue(parentRow, input, valueType);
+    presentValue(parentRow, input, valueType, path);
     return;
   }
 
@@ -276,11 +330,12 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
     const select = createBooleanSelect(value, editable);
     select.setAttribute("aria-label", label);
     select.addEventListener("change", () => {
+      if (!editable) return;
       select.setAttribute("data-value", select.value);
       onChange(select.value === "true");
       emitChange();
     });
-    presentValue(parentRow, select, valueType);
+    presentValue(parentRow, select, valueType, path);
     return;
   }
 
@@ -289,8 +344,8 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
     text, "json-value json-value-text", editable, typeof value === "string",
   );
   input.setAttribute("aria-label", label);
-  input.addEventListener("input", () => input.setCustomValidity(""));
   input.addEventListener("change", () => {
+    if (!editable) return;
     let nextValue;
     try {
       nextValue = typeof value === "string" ? input.value : parseLoosePrimitive(input.value);
@@ -298,25 +353,24 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
       if (!(error instanceof RangeError)) {
         throw error;
       }
-      input.setCustomValidity(error.message);
-      input.reportValidity();
+      showFieldError(input, error.message);
       return;
     }
-    input.setCustomValidity("");
+    clearFieldError(input);
     onChange(nextValue);
     emitChange();
   });
-  presentValue(parentRow, input, valueType);
+  presentValue(parentRow, input, valueType, path);
 }
 
-function renderNode(container, value, indentLevel, openingRow = null) {
+function renderNode(container, value, indentLevel, openingRow = null, path = []) {
   if (Array.isArray(value)) {
-    renderArray(container, value, indentLevel, openingRow);
+    renderArray(container, value, indentLevel, openingRow, path);
     return;
   }
 
   if (value !== null && typeof value === "object") {
-    renderObject(container, value, indentLevel, openingRow);
+    renderObject(container, value, indentLevel, openingRow, path);
     return;
   }
 
@@ -325,7 +379,7 @@ function renderNode(container, value, indentLevel, openingRow = null) {
   renderPrimitiveControl(row, value, (nextValue) => {
     editorState.data = nextValue;
     sendValue();
-  });
+  }, "Value", path);
   container.appendChild(row);
 }
 
@@ -346,7 +400,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   toggle.className = "json-toggle";
   row.insertBefore(toggle, row.children[0] || null);
   row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
-  const closed = createLabel(isArray ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ ]" : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ }", "json-collapsed-end json-punct");
+  const closed = createLabel(isArray ? "\u2026 ]" : "\u2026 }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
 
@@ -376,7 +430,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   return body;
 }
 
-function renderObject(container, obj, indentLevel, openingRow = null) {
+function renderObject(container, obj, indentLevel, openingRow = null, path = []) {
   container = createCollection(container, obj, indentLevel, openingRow);
 
   const entries = Object.entries(obj);
@@ -397,6 +451,10 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
     keyInput.setAttribute("aria-label", `Key ${currentKey}`);
     keyInput.title = currentKey;
     keyInput.spellcheck = false;
+    const keyField = document.createElement("div");
+    keyField.className = "json-key-field";
+    keyField.appendChild(keyInput);
+    bindFieldError(keyInput, keyField, "key", path.concat(entryKey));
     keyInput.addEventListener("change", () => {
       const nextKey = keyInput.value.trim();
 
@@ -404,14 +462,21 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
         keyInput.value = currentKey;
         return;
       }
-      if (nextKey.length === 0 || nextKey === currentKey) {
+      if (nextKey.length === 0) {
+        showFieldError(keyInput, "Keys cannot be empty. The original key is kept.");
+        return;
+      }
+      if (nextKey === currentKey) {
+        clearFieldError(keyInput);
         keyInput.value = currentKey;
         return;
       }
       if (Object.prototype.hasOwnProperty.call(obj, nextKey)) {
-        keyInput.value = currentKey;
+        showFieldError(keyInput, `The key "${nextKey}" already exists. Choose a unique key.`);
         return;
       }
+      clearFieldError(keyInput);
+      moveRejectedPaths(path.concat(currentKey), path.concat(nextKey));
 
       // Define an own data property: assignment to __proto__ would invoke
       // Object.prototype's setter and discard the renamed JSON entry.
@@ -428,16 +493,16 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
       emitChange();
     });
 
-    row.appendChild(keyInput);
+    row.appendChild(keyField);
     row.appendChild(createLabel(": ", "json-punct"));
 
     if (entryValue !== null && typeof entryValue === "object") {
       container.appendChild(row);
-      renderNode(container, entryValue, indentLevel + 1, row);
+      renderNode(container, entryValue, indentLevel + 1, row, path.concat(entryKey));
     } else {
       renderPrimitiveControl(row, entryValue, (nextValue) => {
         obj[currentKey] = nextValue;
-      }, `Value for ${currentKey}`);
+      }, `Value for ${currentKey}`, path.concat(entryKey));
       container.appendChild(row);
     }
   });
@@ -446,7 +511,7 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
   container.appendChild(close);
 }
 
-function renderArray(container, arr, indentLevel, openingRow = null) {
+function renderArray(container, arr, indentLevel, openingRow = null, path = []) {
   container = createCollection(container, arr, indentLevel, openingRow);
 
   arr.forEach((item, index) => {
@@ -456,11 +521,11 @@ function renderArray(container, arr, indentLevel, openingRow = null) {
 
     if (item !== null && typeof item === "object") {
       container.appendChild(row);
-      renderNode(container, item, indentLevel + 1, row);
+      renderNode(container, item, indentLevel + 1, row, path.concat(index));
     } else {
       renderPrimitiveControl(row, item, (nextValue) => {
         arr[index] = nextValue;
-      }, `Value at index ${index}`);
+      }, `Value at index ${index}`, path.concat(index));
       container.appendChild(row);
     }
   });
@@ -495,6 +560,7 @@ function onRender(event) {
   if (shouldReset) {
     editorState.data = parseJson(json_str);
     editorState.collapsed = new WeakSet();
+    editorState.rejections.clear();
     editorState.sourceJson = json_str;
     editorState.initialized = true;
   }
