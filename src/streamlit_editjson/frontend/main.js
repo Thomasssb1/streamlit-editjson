@@ -138,6 +138,9 @@ function parseLoosePrimitive(text) {
 
   const asNumber = parseNumber(trimmed);
   if (trimmed !== "" && !Number.isNaN(asNumber)) {
+    if (typeof asNumber !== "bigint" && !Number.isFinite(asNumber)) {
+      throw new RangeError("Enter a finite number. This value is not saved.");
+    }
     return asNumber;
   }
 
@@ -194,14 +197,21 @@ function renderPrimitiveControl(parentRow, value, onChange) {
   const input = createTextInput(
     text, "json-value json-value-text", editable, typeof value === "string",
   );
+  input.addEventListener("input", () => input.setCustomValidity(""));
   input.addEventListener("change", () => {
-    if (value === null) {
-      onChange(parseLoosePrimitive(input.value));
-    } else if (typeof value === "string") {
-      onChange(input.value);
-    } else {
-      onChange(parseLoosePrimitive(input.value));
+    let nextValue;
+    try {
+      nextValue = typeof value === "string" ? input.value : parseLoosePrimitive(input.value);
+    } catch (error) {
+      if (!(error instanceof RangeError)) {
+        throw error;
+      }
+      input.setCustomValidity(error.message);
+      input.reportValidity();
+      return;
     }
+    input.setCustomValidity("");
+    onChange(nextValue);
     emitChange();
   });
   parentRow.appendChild(input);

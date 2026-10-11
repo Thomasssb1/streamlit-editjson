@@ -189,6 +189,41 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(ctx.eval('parseLoosePrimitive("hello")'), "hello")
         self.assertEqual(ctx.eval('parseLoosePrimitive("   ")'), "   ")
 
+    def test_null_edits_reject_non_finite_numbers_and_recover(self):
+        for draft in ["Infinity", "-Infinity", "+Infinity", "1e999", "-1e999"]:
+            for recovery, expected in [
+                ("0", 0),
+                ("-2.5", -2.5),
+                ("1e3", 1000),
+                ("9007199254740993", 9007199254740993),
+                ("true", True),
+                ("null", None),
+                ("hello", "hello"),
+                ("", ""),
+            ]:
+                with self.subTest(draft=draft, recovery=recovery):
+                    ctx = self._capture_render({"value": None})
+                    ctx.eval("var __draft = " + json.dumps(draft) + ";")
+                    ctx.eval("""
+                        var row = document.createElement("div");
+                        renderPrimitiveControl(row, null, function (v) {
+                          editorState.data.value = v;
+                        });
+                        var input = row.children[0];
+                        input.value = __draft;
+                        input._listener();
+                    """)
+                    self.assertIsNone(ctx.eval("editorState.data.value"))
+                    self.assertEqual(self._returned_value(ctx), {"value": None})
+                    self.assertEqual(ctx.eval("__emissionCount"), 1)
+                    self.assertTrue(ctx.eval("input.validationMessage"))
+                    ctx.eval(
+                        "input.value = " + json.dumps(recovery) + "; input._listener();"
+                    )
+                    self.assertEqual(self._returned_value(ctx), {"value": expected})
+                    self.assertEqual(ctx.eval("__emissionCount"), 2)
+                    self.assertEqual(ctx.eval("input.validationMessage"), "")
+
     def test_invalid_numeric_edits_keep_last_value_and_report_error(self):
         for original in [12, 0, -1.5, 9007199254740993]:
             for draft in ["", "   ", "invalid", "Infinity", "1e999", "0x10"]:
