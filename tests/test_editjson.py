@@ -80,13 +80,12 @@ class TestEditJson(unittest.TestCase):
             with self.subTest(editable=editable):
                 with patch.object(
                     self.streamlit_editjson, "_component_func", return_value=None
-                ) as component:
-                    with self.assertWarnsRegex(
-                        DeprecationWarning, "editable.*value_editable"
-                    ) as warning:
-                        self.streamlit_editjson.editjson(
-                            filepath, editable=editable, key="legacy"
-                        )
+                ) as component, self.assertWarnsRegex(
+                    DeprecationWarning, "editable.*value_editable"
+                ) as warning:
+                    self.streamlit_editjson.editjson(
+                        filepath, editable=editable, key="legacy"
+                    )
                 kwargs = component.call_args.kwargs
                 self.assertIs(kwargs["value_editable"], editable)
                 self.assertFalse(kwargs["key_editable"])
@@ -99,14 +98,13 @@ class TestEditJson(unittest.TestCase):
             with self.subTest(value_editable=value_editable, editable=editable):
                 with patch.object(
                     self.streamlit_editjson, "_component_func", return_value=None
-                ) as component:
-                    with self.assertWarns(DeprecationWarning):
-                        self.streamlit_editjson.editjson(
-                            filepath,
-                            key_editable=True,
-                            value_editable=value_editable,
-                            editable=editable,
-                        )
+                ) as component, self.assertWarns(DeprecationWarning):
+                    self.streamlit_editjson.editjson(
+                        filepath,
+                        key_editable=True,
+                        value_editable=value_editable,
+                        editable=editable,
+                    )
                 self.assertIs(
                     component.call_args.kwargs["value_editable"], value_editable
                 )
@@ -116,10 +114,9 @@ class TestEditJson(unittest.TestCase):
         filepath = self._create_temp_json_file({"enabled": True})
         with patch.object(
             self.streamlit_editjson, "_component_func", return_value=None
-        ) as component:
-            with warnings.catch_warnings(record=True) as recorded:
-                warnings.simplefilter("always")
-                self.streamlit_editjson.editjson(filepath, True, False, "modern")
+        ) as component, warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            self.streamlit_editjson.editjson(filepath, True, False, "modern")
         kwargs = component.call_args.kwargs
         self.assertTrue(kwargs["key_editable"])
         self.assertFalse(kwargs["value_editable"])

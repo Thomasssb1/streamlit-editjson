@@ -4,7 +4,6 @@ from pathlib import Path
 
 from py_mini_racer import py_mini_racer
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MAIN_JS_PATH = PROJECT_ROOT / "src" / "streamlit_editjson" / "frontend" / "main.js"
 
@@ -117,6 +116,7 @@ class TestFrontendJS(unittest.TestCase):
         ]:
             with self.subTest(original=original, edited=edited):
                 ctx = self._capture_render({"id": original})
+                ctx.eval("var __draft = " + json.dumps(edited) + ";")
                 result = json.loads(
                     ctx.eval(
                         """
@@ -127,12 +127,11 @@ class TestFrontendJS(unittest.TestCase):
                       });
                       var input = row.children[0];
                       var initial = input.value;
-                      input.value = %s;
+                      input.value = __draft;
                       input._listener();
                       return { initial: initial };
                     })())
                 """
-                        % json.dumps(edited)
                     )
                 )
                 self.assertEqual(result["initial"], str(original))
@@ -161,6 +160,7 @@ class TestFrontendJS(unittest.TestCase):
             for draft in ["", "   ", "invalid", "Infinity", "1e999", "0x10"]:
                 with self.subTest(original=original, draft=draft):
                     ctx = self._capture_render({"count": original})
+                    ctx.eval("var __draft = " + json.dumps(draft) + ";")
                     result = json.loads(
                         ctx.eval(
                             """
@@ -170,12 +170,11 @@ class TestFrontendJS(unittest.TestCase):
                             editorState.data.count = v;
                           });
                           var input = row.children[0];
-                          input.value = %s;
+                          input.value = __draft;
                           input._listener();
                           return { error: input.validationMessage, emissions: __emissionCount };
                         })())
                     """
-                            % json.dumps(draft)
                         )
                     )
                     self.assertEqual(self._returned_value(ctx), {"count": original})
@@ -186,6 +185,7 @@ class TestFrontendJS(unittest.TestCase):
         for text, expected in [("0", 0), ("-2.5", -2.5), ("1e3", 1000), (".5", 0.5)]:
             with self.subTest(text=text):
                 ctx = self._capture_render({"count": 7})
+                ctx.eval("var __draft = " + json.dumps(text) + ";")
                 result = json.loads(
                     ctx.eval(
                         """
@@ -197,12 +197,11 @@ class TestFrontendJS(unittest.TestCase):
                       var input = row.children[0];
                       input.value = "";
                       input._listener();
-                      input.value = %s;
+                      input.value = __draft;
                       input._listener();
                       return { error: input.validationMessage, emissions: __emissionCount };
                     })())
                 """
-                        % json.dumps(text)
                     )
                 )
                 self.assertEqual(self._returned_value(ctx), {"count": expected})
@@ -219,6 +218,7 @@ class TestFrontendJS(unittest.TestCase):
             with self.subTest(original=original):
                 ctx = self._capture_render({"note": original})
                 edited = original + "\nthird"
+                ctx.eval("var __draft = " + json.dumps(edited) + ";")
                 result = json.loads(
                     ctx.eval(
                         """
@@ -229,12 +229,11 @@ class TestFrontendJS(unittest.TestCase):
                       });
                       var input = row.children[0];
                       var initial = input.value;
-                      input.value = %s;
+                      input.value = __draft;
                       input._listener();
                       return { initial: initial };
                     })())
                 """
-                        % json.dumps(edited)
                     )
                 )
                 self.assertEqual(result["initial"], original)

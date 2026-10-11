@@ -63,6 +63,14 @@ mean `filepath, key_editable, value_editable, key`.
 
 ## Testing
 
+Install the development dependencies so local checks use the same Ruff version
+as CI:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m ruff check .
+```
+
 ### Python unit tests
 
 Run:
