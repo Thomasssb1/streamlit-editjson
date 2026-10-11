@@ -400,15 +400,15 @@ class TestFrontendJS(unittest.TestCase):
             var __calls = [];
             createNumberInput = function (value, editable) {
               __calls.push(["number", value, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
             createBooleanSelect = function (value, editable) {
               __calls.push(["boolean", value, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
             createTextInput = function (value, className, editable) {
               __calls.push(["text", value, className, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
 
             editorState.valueEditable = true;

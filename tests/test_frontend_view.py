@@ -115,3 +115,18 @@ class TestFrontendView(unittest.TestCase):
             ),
             "3 items",
         )
+
+    def test_rows_label_values_and_keep_readonly_keys_selectable(self):
+        ctx = self._ctx({"name": "Ada", "count": 3, "enabled": True})
+        result = json.loads(
+            ctx.eval("""
+            JSON.stringify({
+              keys: findAll(container, "json-key").map(k => ({readonly: k.readOnly, disabled: k.disabled})),
+              values: findAll(container, "json-value").map(v => v.getAttribute("aria-label"))
+            })
+        """)
+        )
+        self.assertEqual(result["keys"], [{"readonly": True, "disabled": False}] * 3)
+        self.assertEqual(
+            result["values"], ["Value for name", "Value for count", "Value for enabled"]
+        )

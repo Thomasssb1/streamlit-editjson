@@ -1,8 +1,6 @@
 // The `Streamlit` object exists because our html file includes
 // `streamlit-component-lib.js`.
 
-const INDENT_PX = 18;
-
 const editorState = {
   initialized: false,
   sourceJson: null,
@@ -158,12 +156,13 @@ function emitChange() {
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
-function renderPrimitiveControl(parentRow, value, onChange) {
+function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
   const editable = editorState.valueEditable;
   const valueType = value === null ? "null" : typeof value;
 
   if (valueType === "number" || valueType === "bigint") {
     const input = createNumberInput(value, editable);
+    input.setAttribute("aria-label", label);
     input.addEventListener("input", () => input.setCustomValidity(""));
     input.addEventListener("change", () => {
       const text = input.value.trim();
@@ -186,6 +185,7 @@ function renderPrimitiveControl(parentRow, value, onChange) {
 
   if (valueType === "boolean") {
     const select = createBooleanSelect(value, editable);
+    select.setAttribute("aria-label", label);
     select.addEventListener("change", () => {
       onChange(select.value === "true");
       emitChange();
@@ -198,6 +198,7 @@ function renderPrimitiveControl(parentRow, value, onChange) {
   const input = createTextInput(
     text, "json-value json-value-text", editable, typeof value === "string",
   );
+  input.setAttribute("aria-label", label);
   input.addEventListener("input", () => input.setCustomValidity(""));
   input.addEventListener("change", () => {
     let nextValue;
@@ -231,7 +232,6 @@ function renderNode(container, value, indentLevel, openingRow = null) {
 
   const row = document.createElement("div");
   row.className = "json-row";
-  row.style.marginLeft = `${indentLevel * INDENT_PX}px`;
   renderPrimitiveControl(row, value, (nextValue) => {
     editorState.data = nextValue;
     sendValue();
@@ -249,7 +249,6 @@ function createCollection(container, value, indentLevel, openingRow) {
   const row = openingRow || document.createElement("div");
   if (!openingRow) {
     row.className = "json-row";
-    row.style.marginLeft = `${indentLevel * INDENT_PX}px`;
     container.appendChild(row);
   }
   const toggle = document.createElement("button");
@@ -257,7 +256,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   toggle.className = "json-toggle";
   row.insertBefore(toggle, row.children[0] || null);
   row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
-  const closed = createLabel(isArray ? "… ]" : "… }", "json-collapsed-end json-punct");
+  const closed = createLabel(isArray ? "â€¦ ]" : "â€¦ }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
 
@@ -295,7 +294,6 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
   entries.forEach(([entryKey, entryValue]) => {
     const row = document.createElement("div");
     row.className = "json-row";
-    row.style.marginLeft = `${(indentLevel + 1) * INDENT_PX}px`;
 
     let currentKey = entryKey;
     const keyInput = createTextInput(
@@ -304,6 +302,11 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
       editorState.keyEditable,
     );
 
+    keyInput.disabled = false;
+    keyInput.readOnly = !editorState.keyEditable;
+    keyInput.setAttribute("aria-label", `Key ${currentKey}`);
+    keyInput.title = currentKey;
+    keyInput.spellcheck = false;
     keyInput.addEventListener("change", () => {
       const nextKey = keyInput.value.trim();
 
@@ -344,13 +347,12 @@ function renderObject(container, obj, indentLevel, openingRow = null) {
     } else {
       renderPrimitiveControl(row, entryValue, (nextValue) => {
         obj[currentKey] = nextValue;
-      });
+      }, `Value for ${currentKey}`);
       container.appendChild(row);
     }
   });
 
-  const close = createLabel("}", "json-punct");
-  close.style.marginLeft = `${indentLevel * INDENT_PX}px`;
+  const close = createLabel("}", "json-close json-punct");
   container.appendChild(close);
 }
 
@@ -360,7 +362,6 @@ function renderArray(container, arr, indentLevel, openingRow = null) {
   arr.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "json-row";
-    row.style.marginLeft = `${(indentLevel + 1) * INDENT_PX}px`;
     row.appendChild(createLabel(`${index}: `, "json-index"));
 
     if (item !== null && typeof item === "object") {
@@ -369,13 +370,12 @@ function renderArray(container, arr, indentLevel, openingRow = null) {
     } else {
       renderPrimitiveControl(row, item, (nextValue) => {
         arr[index] = nextValue;
-      });
+      }, `Value at index ${index}`);
       container.appendChild(row);
     }
   });
 
-  const close = createLabel("]", "json-punct");
-  close.style.marginLeft = `${indentLevel * INDENT_PX}px`;
+  const close = createLabel("]", "json-close json-punct");
   container.appendChild(close);
 }
 
@@ -390,6 +390,8 @@ function renderEditor() {
  * Called whenever the component receives data from Streamlit.
  */
 function onRender(event) {
+  const theme = event.detail.theme || {};
+  document.getElementById("root").setAttribute("data-theme", theme.base === "dark" ? "dark" : "light");
   const {
     json_str,
     key_editable = false,
