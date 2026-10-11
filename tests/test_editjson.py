@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -72,6 +73,58 @@ class TestEditJson(unittest.TestCase):
                     self.assertEqual(
                         self.streamlit_editjson.editjson(filepath), original
                     )
+
+    def test_legacy_editable_keyword_maps_to_value_editable_and_warns(self):
+        filepath = self._create_temp_json_file({"enabled": True})
+        for editable in [True, False, None]:
+            with self.subTest(editable=editable):
+                with patch.object(
+                    self.streamlit_editjson, "_component_func", return_value=None
+                ) as component:
+                    with self.assertWarnsRegex(
+                        DeprecationWarning, "editable.*value_editable"
+                    ) as warning:
+                        self.streamlit_editjson.editjson(
+                            filepath, editable=editable, key="legacy"
+                        )
+                kwargs = component.call_args.kwargs
+                self.assertIs(kwargs["value_editable"], editable)
+                self.assertFalse(kwargs["key_editable"])
+                self.assertEqual(kwargs["key"], "legacy")
+                self.assertEqual(Path(warning.filename), Path(__file__))
+
+    def test_explicit_value_editable_takes_precedence_over_legacy_alias(self):
+        filepath = self._create_temp_json_file({"enabled": True})
+        for value_editable, editable in [(True, False), (False, True), (None, True)]:
+            with self.subTest(value_editable=value_editable, editable=editable):
+                with patch.object(
+                    self.streamlit_editjson, "_component_func", return_value=None
+                ) as component:
+                    with self.assertWarns(DeprecationWarning):
+                        self.streamlit_editjson.editjson(
+                            filepath,
+                            key_editable=True,
+                            value_editable=value_editable,
+                            editable=editable,
+                        )
+                self.assertIs(
+                    component.call_args.kwargs["value_editable"], value_editable
+                )
+                self.assertTrue(component.call_args.kwargs["key_editable"])
+
+    def test_current_positional_arguments_keep_their_meaning_without_warnings(self):
+        filepath = self._create_temp_json_file({"enabled": True})
+        with patch.object(
+            self.streamlit_editjson, "_component_func", return_value=None
+        ) as component:
+            with warnings.catch_warnings(record=True) as recorded:
+                warnings.simplefilter("always")
+                self.streamlit_editjson.editjson(filepath, True, False, "modern")
+        kwargs = component.call_args.kwargs
+        self.assertTrue(kwargs["key_editable"])
+        self.assertFalse(kwargs["value_editable"])
+        self.assertEqual(kwargs["key"], "modern")
+        self.assertEqual(recorded, [])
 
     def test_passes_expected_arguments_to_component(self):
         original = {"enabled": True, "count": 3}
