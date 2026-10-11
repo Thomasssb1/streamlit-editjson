@@ -21,6 +21,24 @@ class TestFrontendJS(unittest.TestCase):
         ctx.eval(
             r"""
             var __messages = [];
+            var __now = 0, __timerId = 0, __timers = new Map();
+            function setTimeout(callback, delay) {
+              var id = ++__timerId;
+              __timers.set(id, {callback: callback, at: __now + delay});
+              return id;
+            }
+            function clearTimeout(id) { __timers.delete(id); }
+            function advanceTime(ms) {
+              var end = __now + ms;
+              while (true) {
+                var next = Array.from(__timers.entries()).sort((a, b) => a[1].at - b[1].at)[0];
+                if (!next || next[1].at > end) break;
+                __now = next[1].at;
+                __timers.delete(next[0]);
+                next[1].callback();
+              }
+              __now = end;
+            }
             var console = { log: function () {} };
             var window = {
               parent: { postMessage: function (message) { __messages.push(message); } },
@@ -32,13 +50,18 @@ class TestFrontendJS(unittest.TestCase):
               var utf8 = unescape(encodeURIComponent(text));
               return Uint8Array.from(utf8, function (c) { return c.charCodeAt(0); });
             };
+            function findByClass(node, className) {
+              var found = (node.className || "").split(" ").includes(className) ? [node] : [];
+              return found.concat((node.children || []).flatMap(function (child) {
+                return findByClass(child, className);
+              }));
+            }
             var document = {
               body: { scrollHeight: 120 },
-              getElementById: function () {
-                return {
-                  innerHTML: "",
-                  appendChild: function () {}
-                };
+              getElementById: function (id) {
+                if (!this.nodes) this.nodes = {};
+                if (!this.nodes[id]) this.nodes[id] = this.createElement("div");
+                return this.nodes[id];
               },
               createElement: function (tag) {
                 var element = {
@@ -50,13 +73,44 @@ class TestFrontendJS(unittest.TestCase):
                   disabled: false,
                   textContent: "",
                   style: {},
+                  hidden: false,
+                  attributes: {},
+                  listeners: {},
+                  setAttribute: function (name, value) { this.attributes[name] = String(value); },
+                  getAttribute: function (name) { return this.attributes[name] || null; },
+                  removeAttribute: function (name) { delete this.attributes[name]; },
                   children: [],
                   validationMessage: "",
+                  focus: function () { document.activeElement = this; },
+                  select: function () {},
                   setCustomValidity: function (message) { this.validationMessage = message; },
                   reportValidity: function () { return !this.validationMessage; },
-                  appendChild: function (child) { this.children.push(child); },
-                  addEventListener: function (_name, cb) { this._listener = cb; }
+                  appendChild: function (child) { this.children.push(child); child.parentElement = this; },
+                  replaceChild: function (child, old) {
+                    var index = this.children.indexOf(old);
+                    if (index < 0) throw new Error("Child not found");
+                    this.children[index] = child;
+                    child.parentElement = this;
+                    old.parentElement = null;
+                  },
+                  insertBefore: function (child, before) {
+                    var index = this.children.indexOf(before);
+                    this.children.splice(index < 0 ? this.children.length : index, 0, child);
+                    child.parentElement = this;
+                  },
+                  addEventListener: function (name, cb) {
+                    if (!this.listeners[name]) this.listeners[name] = [];
+                    this.listeners[name].push(cb);
+                    this._listener = () => this.dispatchEvent({type: name});
+                  },
+                  dispatchEvent: function (event) {
+                    (this.listeners[event.type] || []).forEach(cb => cb(event));
+                  }
                 };
+                Object.defineProperty(element, "innerHTML", {
+                  get: function () { return ""; },
+                  set: function () { this.children = []; }
+                });
                 // Model the browser's single-line input value sanitization.
                 Object.defineProperty(element, "value", {
                   get: function () { return this._value || ""; },
@@ -159,10 +213,10 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.id, function (v) {
                         editorState.data.id = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { initial: initial };
                     })())
                 """
@@ -209,16 +263,18 @@ class TestFrontendJS(unittest.TestCase):
                         renderPrimitiveControl(row, null, function (v) {
                           editorState.data.value = v;
                         });
-                        var input = row.children[0];
+                        var input = findByClass(row, "json-value")[0];
                         input.value = __draft;
-                        input._listener();
+                        input.dispatchEvent({type: "change"});
                     """)
                     self.assertIsNone(ctx.eval("editorState.data.value"))
                     self.assertEqual(self._returned_value(ctx), {"value": None})
                     self.assertEqual(ctx.eval("__emissionCount"), 1)
                     self.assertTrue(ctx.eval("input.validationMessage"))
                     ctx.eval(
-                        "input.value = " + json.dumps(recovery) + "; input._listener();"
+                        "input.value = "
+                        + json.dumps(recovery)
+                        + '; input.dispatchEvent({type: "change"});'
                     )
                     self.assertEqual(self._returned_value(ctx), {"value": expected})
                     self.assertEqual(ctx.eval("__emissionCount"), 2)
@@ -238,9 +294,9 @@ class TestFrontendJS(unittest.TestCase):
                           renderPrimitiveControl(row, editorState.data.count, function (v) {
                             editorState.data.count = v;
                           });
-                          var input = row.children[0];
+                          var input = findByClass(row, "json-value")[0];
                           input.value = __draft;
-                          input._listener();
+                          input.dispatchEvent({type: "change"});
                           return { error: input.validationMessage, emissions: __emissionCount };
                         })())
                     """
@@ -263,11 +319,11 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.count, function (v) {
                         editorState.data.count = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       input.value = "";
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { error: input.validationMessage, emissions: __emissionCount };
                     })())
                 """
@@ -296,10 +352,10 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.note, function (v) {
                         editorState.data.note = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return { initial: initial };
                     })())
                 """
@@ -316,12 +372,12 @@ class TestFrontendJS(unittest.TestCase):
               editorState.valueEditable = false;
               var row = document.createElement("div");
               renderPrimitiveControl(row, editorState.data.note, function () {});
-              return { value: row.children[0].value, disabled: row.children[0].disabled };
+              return { value: findByClass(row, "json-value")[0].value, readonly: findByClass(row, "json-value")[0].readOnly };
             })())
         """)
         )
         self.assertEqual(result["value"], "first\nsecond")
-        self.assertTrue(result["disabled"])
+        self.assertTrue(result["readonly"])
 
     def test_create_boolean_select_shape(self):
         ctx = self._ctx()
@@ -373,15 +429,15 @@ class TestFrontendJS(unittest.TestCase):
             var __calls = [];
             createNumberInput = function (value, editable) {
               __calls.push(["number", value, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
             createBooleanSelect = function (value, editable) {
               __calls.push(["boolean", value, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
             createTextInput = function (value, className, editable) {
               __calls.push(["text", value, className, editable]);
-              return { addEventListener: function () {} };
+              return { addEventListener: function () {}, setAttribute: function () {} };
             };
 
             editorState.valueEditable = true;
@@ -413,9 +469,9 @@ class TestFrontendJS(unittest.TestCase):
                       var prototype = Object.getPrototypeOf(obj);
                       var container = document.createElement("div");
                       renderObject(container, obj, 0);
-                      var input = container.children[1].children[0];
+                      var input = findByClass(container, "json-key")[0];
                       input.value = "__proto__";
-                      input._listener();
+                      input.dispatchEvent({type: "change"});
                       return {
                         samePrototype: Object.getPrototypeOf(obj) === prototype,
                         ownsKey: Object.prototype.hasOwnProperty.call(obj, "__proto__"),
@@ -438,12 +494,12 @@ class TestFrontendJS(unittest.TestCase):
             editorState.keyEditable = true;
             var container = document.createElement("div");
             renderObject(container, editorState.data, 0);
-            var input = container.children[1].children[0];
+            var input = findByClass(container, "json-key")[0];
             input.value = "__proto__";
-            input._listener();
+            input.dispatchEvent({type: "change"});
         """)
         self.assertEqual(self._returned_value(ctx), data)
-        self.assertEqual(ctx.eval("input.value"), "old")
+        self.assertEqual(ctx.eval("input.value"), "__proto__")
 
     def test_render_object_key_rename_updates_underlying_object(self):
         ctx = self._ctx()
@@ -462,9 +518,9 @@ class TestFrontendJS(unittest.TestCase):
 
                   renderObject(container, obj, 0);
 
-                  var keyInput = container.children[1].children[0];
+                  var keyInput = findByClass(container, "json-key")[0];
                   keyInput.value = "new_key";
-                  keyInput._listener();
+                  keyInput.dispatchEvent({type: "change"});
 
                   return {
                     hasOldKey: Object.prototype.hasOwnProperty.call(obj, "old_key"),
@@ -496,15 +552,15 @@ class TestFrontendJS(unittest.TestCase):
                   };
 
                   renderObject(container, obj, 0);
-                  var firstKeyInput = container.children[1].children[0];
+                  var firstKeyInput = findByClass(container, "json-key")[0];
 
                   firstKeyInput.value = "   ";
-                  firstKeyInput._listener();
+                  firstKeyInput.dispatchEvent({type: "change"});
 
                   var keysAfterEmpty = Object.keys(obj).sort();
 
                   firstKeyInput.value = "second";
-                  firstKeyInput._listener();
+                  firstKeyInput.dispatchEvent({type: "change"});
 
                   var keysAfterCollision = Object.keys(obj).sort();
 

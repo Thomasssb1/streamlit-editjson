@@ -38,7 +38,10 @@ The component returns the edited JSON object as a Python `dict`.
 Integer values retain their exact digits, including integers outside JavaScript's
 safe-integer range, when loaded, edited, and returned to Python.
 Clearing a number field, or entering an invalid number, keeps its last valid value
-and displays a validation error. Enter `0` explicitly to set a value to zero.
+and explains the rejection next to the field. Rejected drafts stay visible until
+corrected, including across Streamlit reruns. Empty or duplicate key renames also
+show an inline explanation and keep the original key. Enter `0` explicitly to
+set a numeric value to zero.
 String values use text areas so line breaks remain visible and editable.
 
 ## Testing

@@ -14,7 +14,10 @@ const Streamlit = {
   setComponentReady: function() {
       sendMessageToStreamlitClient("streamlit:componentReady", {apiVersion: 1});
   },
+  lastFrameHeight: null,
   setFrameHeight: function(height) {
+      if (height === this.lastFrameHeight) return;
+      this.lastFrameHeight = height;
       sendMessageToStreamlitClient("streamlit:setFrameHeight", {height: height});
   },
   setComponentValue: function(value) {

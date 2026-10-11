@@ -13,12 +13,13 @@
 
 <body>
   <div id="root">
-    <div id="json-container">
-      <!-- 
-      <span data-color-code="key">key</span>: "<span data-color-code="value" contenteditable
-        spellcheck="false">myname</span>"
-      -->
+    <div class="json-toolbar">
+      <span class="json-toolbar-title">JSON</span>
+      <button id="copy-json" type="button" aria-live="polite" aria-atomic="true" title="Copy the current valid JSON">Copy JSON</button>
     </div>
+    <div id="copy-status" class="json-copy-status" role="status" aria-live="polite"></div>
+    <textarea id="copy-fallback" aria-label="JSON to copy" readonly hidden spellcheck="false"></textarea>
+    <div id="json-container"></div>
   </div>
 </body>
 
