@@ -57,11 +57,45 @@ class TestEditJson(unittest.TestCase):
         edited = {"id": 9007199254740995, "nested": [-9007199254740993]}
         filepath = self._create_temp_json_file(original)
         with patch.object(
-            self.streamlit_editjson, "_component_func", return_value=json.dumps(edited)
+            self.streamlit_editjson,
+            "_component_func",
+            return_value=json.dumps(edited).encode("utf-8"),
         ):
             self.assertEqual(self.streamlit_editjson.editjson(filepath), edited)
 
-    def test_default_uses_the_same_json_transport_as_frontend(self):
+    def test_legacy_root_strings_are_returned_without_decoding(self):
+        filepath = self._create_temp_json_file("original")
+        for value in ["plain text", "null", "123", "true", '"quoted"', "{}", "[]", ""]:
+            with self.subTest(value=value):
+                with patch.object(
+                    self.streamlit_editjson, "_component_func", return_value=value
+                ):
+                    result = self.streamlit_editjson.editjson(filepath)
+                self.assertEqual(result, value)
+                self.assertIsInstance(result, str)
+
+    def test_byte_transport_decodes_root_values_and_unicode(self):
+        filepath = self._create_temp_json_file("original")
+        for value in [
+            "plain text",
+            "null",
+            "123",
+            "caf\u00e9 \U0001f642",
+            None,
+            True,
+            9007199254740993,
+        ]:
+            with self.subTest(value=value):
+                with patch.object(
+                    self.streamlit_editjson,
+                    "_component_func",
+                    return_value=json.dumps(value, ensure_ascii=False).encode("utf-8"),
+                ):
+                    result = self.streamlit_editjson.editjson(filepath)
+                self.assertEqual(result, value)
+                self.assertIs(type(result), type(value))
+
+    def test_default_preserves_original_json(self):
         for original in [{"id": 9007199254740993}, "plain text", None]:
             with self.subTest(original=original):
                 filepath = self._create_temp_json_file(original)
@@ -138,7 +172,7 @@ class TestEditJson(unittest.TestCase):
         self.assertEqual(kwargs["key_editable"], False)
         self.assertEqual(kwargs["value_editable"], True)
         self.assertIsNone(kwargs["key"])
-        self.assertEqual(kwargs["default"], json.dumps(original))
+        self.assertEqual(kwargs["default"], original)
 
 
 if __name__ == "__main__":

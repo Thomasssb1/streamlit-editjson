@@ -64,15 +64,15 @@ def editjson(
         key_editable=key_editable,
         value_editable=value_editable,
         key=key,
-        default=json_str,
+        default=json_obj,
     )
 
     if component_value is None:
         return json_obj
 
-    # The frontend returns JSON text to preserve integers beyond JavaScript's
-    # safe range. Accept object values from an already-mounted older frontend.
-    if isinstance(component_value, str):
+    # UTF-8 JSON bytes preserve large integers and distinguish this protocol
+    # from raw JSON values (including strings) returned by older frontends.
+    if isinstance(component_value, bytes):
         return json.loads(component_value)
     return component_value
 

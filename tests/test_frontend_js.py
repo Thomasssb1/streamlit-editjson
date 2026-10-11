@@ -12,12 +12,26 @@ class TestFrontendJS(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.main_js = MAIN_JS_PATH.read_text(encoding="utf-8")
+        cls.bridge_js = MAIN_JS_PATH.with_name("streamlit-component-lib.js").read_text(
+            encoding="utf-8"
+        )
 
     def _ctx(self):
         ctx = py_mini_racer.MiniRacer()
         ctx.eval(
             r"""
-            var window = {};
+            var __messages = [];
+            var console = { log: function () {} };
+            var window = {
+              parent: { postMessage: function (message) { __messages.push(message); } },
+              addEventListener: function () {}
+            };
+            // V8 has no browser TextEncoder; supply its UTF-8 API for bridge tests.
+            function TextEncoder() {}
+            TextEncoder.prototype.encode = function (text) {
+              var utf8 = unescape(encodeURIComponent(text));
+              return Uint8Array.from(utf8, function (c) { return c.charCodeAt(0); });
+            };
             var document = {
               body: { scrollHeight: 120 },
               getElementById: function () {
@@ -59,32 +73,52 @@ class TestFrontendJS(unittest.TestCase):
               }
             };
 
-            var Streamlit = {
-              setComponentValue: function (_value) {},
-              setFrameHeight: function (_height) {},
-              setComponentReady: function () {},
-              RENDER_EVENT: "render",
-              events: {
-                addEventListener: function (_event, _cb) {}
-              }
-            };
             """
         )
+        ctx.eval(self.bridge_js)
         ctx.eval(self.main_js)
         return ctx
 
     def _capture_render(self, data):
         ctx = self._ctx()
         ctx.eval(
-            "var __emitted; var __emissionCount = 0; Streamlit.setComponentValue = function (v) { __emitted = v; __emissionCount++; };"
+            """
+            var __emitted; var __emissionCount = 0;
+            window.parent.postMessage = function (message) {
+              __messages.push(message);
+              if (message.type === "streamlit:setComponentValue") {
+                __emitted = message.value;
+                __emissionCount++;
+              }
+            };
+            """
         )
         event = {"detail": {"args": {"json_str": json.dumps(data)}}}
         ctx.eval("onRender(" + json.dumps(event) + ");")
         return ctx
 
     def _returned_value(self, ctx):
-        value = json.loads(ctx.eval("JSON.stringify(__emitted)"))
-        return json.loads(value) if isinstance(value, str) else value
+        value = json.loads(ctx.eval("JSON.stringify(Array.from(__emitted))"))
+        return json.loads(bytes(value))
+
+    def test_component_transport_is_unambiguous_utf8_bytes(self):
+        for value in [
+            "plain text",
+            "null",
+            "123",
+            "caf\u00e9 \U0001f642",
+            "\ud800",
+            None,
+            True,
+            {"id": 9007199254740993},
+        ]:
+            with self.subTest(value=value):
+                ctx = self._capture_render(value)
+                self.assertEqual(
+                    ctx.eval("__messages[__messages.length - 1].dataType"), "bytes"
+                )
+                self.assertTrue(ctx.eval("__emitted instanceof Uint8Array"))
+                self.assertEqual(self._returned_value(ctx), value)
 
     def test_large_integers_round_trip_without_changing_strings(self):
         data = {

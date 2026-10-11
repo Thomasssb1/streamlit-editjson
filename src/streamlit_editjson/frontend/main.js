@@ -144,8 +144,13 @@ function parseLoosePrimitive(text) {
   return text;
 }
 
+function sendValue() {
+  // Bytes distinguish serialized JSON from raw strings sent by older frontends.
+  Streamlit.setComponentValue(new TextEncoder().encode(stringifyJson(editorState.data)));
+}
+
 function emitChange() {
-  Streamlit.setComponentValue(stringifyJson(editorState.data));
+  sendValue();
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
@@ -218,7 +223,7 @@ function renderNode(container, value, indentLevel) {
   row.style.marginLeft = `${indentLevel * INDENT_PX}px`;
   renderPrimitiveControl(row, value, (nextValue) => {
     editorState.data = nextValue;
-    Streamlit.setComponentValue(stringifyJson(editorState.data));
+    sendValue();
   });
   container.appendChild(row);
 }
@@ -351,7 +356,7 @@ function onRender(event) {
   renderEditor();
 
   if (shouldReset) {
-    Streamlit.setComponentValue(stringifyJson(editorState.data));
+    sendValue();
   }
 }
 
