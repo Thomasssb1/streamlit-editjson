@@ -279,6 +279,151 @@ function createColourPreview(input) {
   return swatch;
 }
 
+function jsonType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value === "bigint" ? "number" : typeof value;
+}
+
+function isFiniteJson(value) {
+  if (typeof value === "number") return Number.isFinite(value);
+  return value === null || typeof value !== "object" || Object.values(value).every(isFiniteJson);
+}
+
+function convertType(value, target) {
+  const current = jsonType(value);
+  if (target === current) return {value, replace: false};
+  if (target === "string") return {value: stringifyJson(value), replace: false};
+  if (current === "string") {
+    try {
+      const parsed = parseJson(value);
+      if (jsonType(parsed) === target && isFiniteJson(parsed)) {
+        return {value: parsed, replace: false};
+      }
+    } catch (_) {
+      // Text that cannot represent the selected type needs an explicit replacement.
+    }
+  }
+  if (target === "number" && current === "boolean") {
+    return {value: value ? 1 : 0, replace: false};
+  }
+  if (target === "boolean" && current === "number" && (value === 0 || value === 1)) {
+    return {value: value === 1, replace: false};
+  }
+  const defaults = {number: 0, boolean: false, null: null, object: {}, array: []};
+  return {value: defaults[target], replace: value !== null};
+}
+
+let renderVersion = 0;
+const typeControls = new Map();
+
+function addTypeSelector(container, type, path) {
+  const select = document.createElement("select");
+  select.className = "json-type";
+  select.disabled = !editorState.valueEditable;
+  select.setAttribute("aria-label", `Type for ${path.length ? path.join(" / ") : "root"}`);
+  const pathKey = JSON.stringify(path);
+  select.setAttribute("data-path", pathKey);
+  select.title = "Change JSON type";
+  for (const kind of ["string", "number", "boolean", "null", "object", "array"]) {
+    const option = document.createElement("option");
+    option.value = kind;
+    option.textContent = kind;
+    select.appendChild(option);
+  }
+  select.value = type;
+  container.appendChild(select);
+  typeControls.set(pathKey, select);
+
+  const confirmation = document.createElement("span");
+  confirmation.className = "json-type-confirm";
+  confirmation.hidden = true;
+  confirmation.setAttribute("role", "group");
+  confirmation.setAttribute("aria-label", "Confirm type replacement");
+  const message = createLabel("", "json-type-message");
+  message.id = `json-type-message-${++errorId}`;
+  confirmation.appendChild(message);
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "json-type-apply";
+  apply.textContent = "Apply";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "json-type-cancel";
+  cancel.textContent = "Cancel";
+  confirmation.appendChild(apply);
+  confirmation.appendChild(cancel);
+  container.appendChild(confirmation);
+
+  const version = renderVersion;
+  const currentValue = () => path.reduce((value, key) => value[key], editorState.data);
+  let pending = null;
+  const dismiss = () => {
+    pending = null;
+    confirmation.hidden = true;
+    select.removeAttribute("aria-describedby");
+    select.value = jsonType(currentValue());
+  };
+  const commit = (value) => {
+    // Replacing a value clears its drafts and descendants, but keeps its key error.
+    for (const key of editorState.rejections.keys()) {
+      const [kind, ...rejectedPath] = JSON.parse(key);
+      if (path.every((part, index) => rejectedPath[index] === part) &&
+          (rejectedPath.length > path.length || kind === "value")) {
+        editorState.rejections.delete(key);
+      }
+    }
+    if (path.length) {
+      const parent = path.slice(0, -1).reduce((node, key) => node[key], editorState.data);
+      Object.defineProperty(parent, path[path.length - 1], {
+        value, writable: true, enumerable: true, configurable: true,
+      });
+    } else {
+      editorState.data = value;
+    }
+    renderEditor();
+    typeControls.get(pathKey).focus();
+    emitChange();
+  };
+  select.addEventListener("change", () => {
+    if (version !== renderVersion) return;
+    const target = select.value;
+    const value = currentValue();
+    dismiss();
+    if (!editorState.valueEditable || target === jsonType(value)) {
+      Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+      return;
+    }
+    const conversion = convertType(value, target);
+    if (!conversion.replace) {
+      commit(conversion.value);
+      return;
+    }
+    pending = {value: conversion.value, source: stringifyJson(value)};
+    message.textContent = `Replace this value with ${stringifyJson(conversion.value)} (${target})? The current value will be discarded.`;
+    confirmation.hidden = false;
+    select.setAttribute("aria-describedby", message.id);
+    Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  });
+  apply.addEventListener("click", () => {
+    if (!editorState.valueEditable || version !== renderVersion || !pending) return;
+    // A changed value needs a fresh decision, not a stale confirmation.
+    if (stringifyJson(currentValue()) === pending.source) {
+      commit(pending.value);
+    } else {
+      dismiss();
+      select.focus();
+      Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+    }
+  });
+  cancel.addEventListener("click", () => {
+    if (version !== renderVersion) return;
+    dismiss();
+    select.focus();
+    Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  });
+}
+
 function presentValue(parentRow, input, valueType, path) {
   const type = valueType === "bigint" ? "number" : valueType;
   const field = document.createElement("div");
@@ -297,7 +442,7 @@ function presentValue(parentRow, input, valueType, path) {
   control.appendChild(input);
   if (type === "string") control.appendChild(quote());
   field.appendChild(control);
-  field.appendChild(createLabel(type, "json-type"));
+  addTypeSelector(field, type, path);
   bindFieldError(input, field, "value", path);
   parentRow.appendChild(field);
   return field;
@@ -404,7 +549,7 @@ function renderNode(container, value, indentLevel, openingRow = null, path = [])
 
 let collectionId = 0;
 
-function createCollection(container, value, indentLevel, openingRow) {
+function createCollection(container, value, indentLevel, openingRow, path) {
   const isArray = Array.isArray(value);
   const count = isArray ? value.length : Object.keys(value).length;
   const unit = isArray ? (count === 1 ? "item" : "items") : (count === 1 ? "property" : "properties");
@@ -414,6 +559,7 @@ function createCollection(container, value, indentLevel, openingRow) {
     row.className = "json-row";
     container.appendChild(row);
   }
+  row.className += " json-collection-row";
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "json-toggle";
@@ -422,6 +568,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   const closed = createLabel(isArray ? "\u2026 ]" : "\u2026 }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
+  addTypeSelector(row, kind, path);
 
   const body = document.createElement("div");
   body.className = "json-children";
@@ -450,7 +597,7 @@ function createCollection(container, value, indentLevel, openingRow) {
 }
 
 function renderObject(container, obj, indentLevel, openingRow = null, path = []) {
-  container = createCollection(container, obj, indentLevel, openingRow);
+  container = createCollection(container, obj, indentLevel, openingRow, path);
 
   const entries = Object.entries(obj);
 
@@ -531,7 +678,7 @@ function renderObject(container, obj, indentLevel, openingRow = null, path = [])
 }
 
 function renderArray(container, arr, indentLevel, openingRow = null, path = []) {
-  container = createCollection(container, arr, indentLevel, openingRow);
+  container = createCollection(container, arr, indentLevel, openingRow, path);
 
   arr.forEach((item, index) => {
     const row = document.createElement("div");
@@ -554,6 +701,8 @@ function renderArray(container, arr, indentLevel, openingRow = null, path = []) 
 }
 
 function renderEditor() {
+  renderVersion++;
+  typeControls.clear();
   setupCopyButton();
   const jsonContainer = document.getElementById("json-container");
   jsonContainer.innerHTML = "";

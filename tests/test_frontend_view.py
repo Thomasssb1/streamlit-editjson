@@ -144,7 +144,7 @@ class TestFrontendView(unittest.TestCase):
         result = json.loads(
             ctx.eval("""
             JSON.stringify({
-              types: findAll(container, "json-type").map(e => e.textContent),
+              types: findAll(container, "json-field").map(e => findAll(e, "json-type")[0].value),
               quotes: findAll(container, "json-quote").length,
               values: findAll(container, "json-value").map(e => e.value)
             })
@@ -437,7 +437,10 @@ class TestFrontendView(unittest.TestCase):
                         + '; input.dispatchEvent({type: "change"});'
                     )
                     self.assertEqual(
-                        ctx.eval('findAll(container, "json-type")[0].textContent'), kind
+                        ctx.eval(
+                            'findAll(findAll(container, "json-field")[0], "json-type")[0].value'
+                        ),
+                        kind,
                     )
                     self.assertIn(
                         "json-field-" + kind,
@@ -472,7 +475,10 @@ class TestFrontendView(unittest.TestCase):
         )
         self.assertTrue(ctx.eval('other === findAll(container, "json-value")[1]'))
         self.assertEqual(
-            ctx.eval('findAll(container, "json-type")[0].textContent'), "string"
+            ctx.eval(
+                'findAll(findAll(container, "json-field")[0], "json-type")[0].value'
+            ),
+            "string",
         )
 
     def test_numeric_storage_changes_refresh_the_numeric_control(self):

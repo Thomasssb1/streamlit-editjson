@@ -118,7 +118,45 @@ textarea.json-value-text { resize: none; }
 }
 
 .json-control { display: flex; align-items: flex-start; min-width: 0; }
-.json-type { color: var(--json-muted); font-size: 10px; padding: 5px 0 0; user-select: none; }
+.json-type {
+  color: var(--json-muted);
+  background: var(--json-bg);
+  border: 1px solid var(--json-border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 10px;
+  height: 26px;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+.json-type:focus-visible { outline: 2px solid var(--json-focus); outline-offset: 1px; }
+.json-type:disabled { cursor: default; opacity: .7; }
+.json-collection-row { flex-wrap: wrap; }
+.json-collection-row > .json-type { margin-left: auto; }
+.json-type-confirm {
+  grid-column: 1 / -1;
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--json-border);
+  border-radius: 5px;
+  background: var(--json-surface);
+  font: 12px/1.45 system-ui, sans-serif;
+}
+.json-type-message { flex: 1 1 180px; }
+.json-type-confirm button {
+  font: inherit;
+  border: 1px solid var(--json-border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  background: var(--json-bg);
+  color: var(--json-text);
+  cursor: pointer;
+}
+.json-type-confirm button:focus-visible { outline: 2px solid var(--json-focus); outline-offset: 1px; }
 .json-quote { color: var(--json-muted); padding-top: 3px; }
 .json-field-string .json-value { color: #9a3412; padding-inline: 2px; }
 .json-field-number .json-value { color: #1d4ed8; flex: 0 1 auto; }
