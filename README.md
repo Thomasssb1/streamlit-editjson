@@ -35,6 +35,8 @@ st.write(value)  # Python dict
 The component returns the edited JSON object as a Python `dict`.
 Integer values retain their exact digits, including integers outside JavaScript's
 safe-integer range, when loaded, edited, and returned to Python.
+Clearing a number field, or entering an invalid number, keeps its last valid value
+and displays a validation error. Enter `0` explicitly to set a value to zero.
 
 ## Testing
 

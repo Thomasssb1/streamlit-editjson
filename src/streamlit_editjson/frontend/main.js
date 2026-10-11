@@ -86,6 +86,7 @@ function createNumberInput(value, editable) {
   input.type = typeof value === "bigint" ? "text" : "number";
   input.inputMode = "decimal";
   input.step = "any";
+  input.required = true;
   input.value = String(value);
   input.disabled = !editable;
   return input;
@@ -142,8 +143,20 @@ function renderPrimitiveControl(parentRow, value, onChange) {
 
   if (valueType === "number" || valueType === "bigint") {
     const input = createNumberInput(value, editable);
+    input.addEventListener("input", () => input.setCustomValidity(""));
     input.addEventListener("change", () => {
-      onChange(parseNumber(input.value));
+      const text = input.value.trim();
+      const nextValue = parseNumber(text);
+      if (
+        !/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) ||
+        (typeof nextValue !== "bigint" && !Number.isFinite(nextValue))
+      ) {
+        input.setCustomValidity("Enter a finite number. Empty or invalid values are not saved.");
+        input.reportValidity();
+        return;
+      }
+      input.setCustomValidity("");
+      onChange(nextValue);
       emitChange();
     });
     parentRow.appendChild(input);

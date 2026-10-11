@@ -38,6 +38,9 @@ class TestFrontendJS(unittest.TestCase):
                   textContent: "",
                   style: {},
                   children: [],
+                  validationMessage: "",
+                  setCustomValidity: function (message) { this.validationMessage = message; },
+                  reportValidity: function () { return !this.validationMessage; },
                   appendChild: function (child) { this.children.push(child); },
                   addEventListener: function (_name, cb) { this._listener = cb; }
                 };
@@ -61,7 +64,7 @@ class TestFrontendJS(unittest.TestCase):
     def _capture_render(self, data):
         ctx = self._ctx()
         ctx.eval(
-            "var __emitted; Streamlit.setComponentValue = function (v) { __emitted = v; };"
+            "var __emitted; var __emissionCount = 0; Streamlit.setComponentValue = function (v) { __emitted = v; __emissionCount++; };"
         )
         event = {"detail": {"args": {"json_str": json.dumps(data)}}}
         ctx.eval("onRender(" + json.dumps(event) + ");")
@@ -139,6 +142,59 @@ class TestFrontendJS(unittest.TestCase):
         self.assertEqual(ctx.eval('parseLoosePrimitive("3.5")'), 3.5)
         self.assertEqual(ctx.eval('parseLoosePrimitive("hello")'), "hello")
         self.assertEqual(ctx.eval('parseLoosePrimitive("   ")'), "   ")
+
+    def test_invalid_numeric_edits_keep_last_value_and_report_error(self):
+        for original in [12, 0, -1.5, 9007199254740993]:
+            for draft in ["", "   ", "invalid", "Infinity", "1e999", "0x10"]:
+                with self.subTest(original=original, draft=draft):
+                    ctx = self._capture_render({"count": original})
+                    result = json.loads(
+                        ctx.eval(
+                            """
+                        JSON.stringify((function () {
+                          var row = document.createElement("div");
+                          renderPrimitiveControl(row, editorState.data.count, function (v) {
+                            editorState.data.count = v;
+                          });
+                          var input = row.children[0];
+                          input.value = %s;
+                          input._listener();
+                          return { error: input.validationMessage, emissions: __emissionCount };
+                        })())
+                    """
+                            % json.dumps(draft)
+                        )
+                    )
+                    self.assertEqual(self._returned_value(ctx), {"count": original})
+                    self.assertEqual(result["emissions"], 1)
+                    self.assertTrue(result["error"])
+
+    def test_numeric_edit_recovers_after_empty_draft(self):
+        for text, expected in [("0", 0), ("-2.5", -2.5), ("1e3", 1000), (".5", 0.5)]:
+            with self.subTest(text=text):
+                ctx = self._capture_render({"count": 7})
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.count, function (v) {
+                        editorState.data.count = v;
+                      });
+                      var input = row.children[0];
+                      input.value = "";
+                      input._listener();
+                      input.value = %s;
+                      input._listener();
+                      return { error: input.validationMessage, emissions: __emissionCount };
+                    })())
+                """
+                        % json.dumps(text)
+                    )
+                )
+                self.assertEqual(self._returned_value(ctx), {"count": expected})
+                self.assertEqual(result["emissions"], 2)
+                self.assertEqual(result["error"], "")
 
     def test_create_boolean_select_shape(self):
         ctx = self._ctx()
