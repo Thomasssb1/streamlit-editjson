@@ -77,7 +77,8 @@ function createTextInput(value, className, editable, multiline = false) {
     input.type = "text";
   }
   input.value = value;
-  input.disabled = !editable;
+  input.readOnly = !editable;
+  input.disabled = false;
   if (multiline) {
     const updateRows = () => {
       input.rows = Math.min(8, input.value.split(/\r\n|\r|\n/).length);
@@ -99,7 +100,10 @@ function createNumberInput(value, editable) {
   input.step = "any";
   input.required = true;
   input.value = String(value);
-  input.disabled = !editable;
+  input.title = String(value);
+  input.style.width = `${Math.max(6, String(value).length + 2)}ch`;
+  input.readOnly = !editable;
+  input.disabled = false;
   return input;
 }
 
@@ -119,6 +123,7 @@ function createBooleanSelect(value, editable) {
   select.appendChild(trueOption);
   select.appendChild(falseOption);
   select.value = value ? "true" : "false";
+  select.setAttribute("data-value", select.value);
   return select;
 }
 
@@ -156,6 +161,25 @@ function emitChange() {
   Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
+function presentValue(parentRow, input, valueType) {
+  const type = valueType === "bigint" ? "number" : valueType;
+  const field = document.createElement("div");
+  field.className = `json-field json-field-${type}`;
+  const control = document.createElement("div");
+  control.className = "json-control";
+  const quote = () => {
+    const mark = createLabel('"', "json-quote");
+    mark.setAttribute("aria-hidden", "true");
+    return mark;
+  };
+  if (type === "string") control.appendChild(quote());
+  control.appendChild(input);
+  if (type === "string") control.appendChild(quote());
+  field.appendChild(control);
+  field.appendChild(createLabel(type, "json-type"));
+  parentRow.appendChild(field);
+}
+
 function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
   const editable = editorState.valueEditable;
   const valueType = value === null ? "null" : typeof value;
@@ -163,7 +187,10 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
   if (valueType === "number" || valueType === "bigint") {
     const input = createNumberInput(value, editable);
     input.setAttribute("aria-label", label);
-    input.addEventListener("input", () => input.setCustomValidity(""));
+    input.addEventListener("input", () => {
+      input.setCustomValidity("");
+      input.style.width = `${Math.max(6, input.value.length + 2)}ch`;
+    });
     input.addEventListener("change", () => {
       const text = input.value.trim();
       const nextValue = parseNumber(text);
@@ -179,7 +206,7 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
       onChange(nextValue);
       emitChange();
     });
-    parentRow.appendChild(input);
+    presentValue(parentRow, input, valueType);
     return;
   }
 
@@ -187,10 +214,11 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
     const select = createBooleanSelect(value, editable);
     select.setAttribute("aria-label", label);
     select.addEventListener("change", () => {
+      select.setAttribute("data-value", select.value);
       onChange(select.value === "true");
       emitChange();
     });
-    parentRow.appendChild(select);
+    presentValue(parentRow, select, valueType);
     return;
   }
 
@@ -216,7 +244,7 @@ function renderPrimitiveControl(parentRow, value, onChange, label = "Value") {
     onChange(nextValue);
     emitChange();
   });
-  parentRow.appendChild(input);
+  presentValue(parentRow, input, valueType);
 }
 
 function renderNode(container, value, indentLevel, openingRow = null) {
@@ -256,7 +284,7 @@ function createCollection(container, value, indentLevel, openingRow) {
   toggle.className = "json-toggle";
   row.insertBefore(toggle, row.children[0] || null);
   row.appendChild(createLabel(isArray ? "[" : "{", "json-punct"));
-  const closed = createLabel(isArray ? "â€¦ ]" : "â€¦ }", "json-collapsed-end json-punct");
+  const closed = createLabel(isArray ? "Ã¢â‚¬Â¦ ]" : "Ã¢â‚¬Â¦ }", "json-collapsed-end json-punct");
   row.appendChild(closed);
   row.appendChild(createLabel(`${count} ${unit}`, "json-count"));
 

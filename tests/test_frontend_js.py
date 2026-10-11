@@ -186,7 +186,7 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.id, function (v) {
                         editorState.data.id = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
                       input._listener();
@@ -236,7 +236,7 @@ class TestFrontendJS(unittest.TestCase):
                         renderPrimitiveControl(row, null, function (v) {
                           editorState.data.value = v;
                         });
-                        var input = row.children[0];
+                        var input = findByClass(row, "json-value")[0];
                         input.value = __draft;
                         input._listener();
                     """)
@@ -265,7 +265,7 @@ class TestFrontendJS(unittest.TestCase):
                           renderPrimitiveControl(row, editorState.data.count, function (v) {
                             editorState.data.count = v;
                           });
-                          var input = row.children[0];
+                          var input = findByClass(row, "json-value")[0];
                           input.value = __draft;
                           input._listener();
                           return { error: input.validationMessage, emissions: __emissionCount };
@@ -290,7 +290,7 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.count, function (v) {
                         editorState.data.count = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       input.value = "";
                       input._listener();
                       input.value = __draft;
@@ -323,7 +323,7 @@ class TestFrontendJS(unittest.TestCase):
                       renderPrimitiveControl(row, editorState.data.note, function (v) {
                         editorState.data.note = v;
                       });
-                      var input = row.children[0];
+                      var input = findByClass(row, "json-value")[0];
                       var initial = input.value;
                       input.value = __draft;
                       input._listener();
@@ -343,12 +343,12 @@ class TestFrontendJS(unittest.TestCase):
               editorState.valueEditable = false;
               var row = document.createElement("div");
               renderPrimitiveControl(row, editorState.data.note, function () {});
-              return { value: row.children[0].value, disabled: row.children[0].disabled };
+              return { value: findByClass(row, "json-value")[0].value, readonly: findByClass(row, "json-value")[0].readOnly };
             })())
         """)
         )
         self.assertEqual(result["value"], "first\nsecond")
-        self.assertTrue(result["disabled"])
+        self.assertTrue(result["readonly"])
 
     def test_create_boolean_select_shape(self):
         ctx = self._ctx()

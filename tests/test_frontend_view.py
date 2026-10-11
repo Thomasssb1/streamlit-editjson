@@ -130,3 +130,48 @@ class TestFrontendView(unittest.TestCase):
         self.assertEqual(
             result["values"], ["Value for name", "Value for count", "Value for enabled"]
         )
+
+    def test_value_types_are_distinct_without_changing_their_contents(self):
+        data = {
+            "empty": "",
+            "quoted": '"hello"\nworld',
+            "number": 9007199254740993,
+            "yes": True,
+            "no": False,
+            "missing": None,
+            "text": "null",
+        }
+        ctx = self._ctx(data)
+        result = json.loads(
+            ctx.eval("""
+            JSON.stringify({
+              types: findAll(container, "json-type").map(e => e.textContent),
+              quotes: findAll(container, "json-quote").length,
+              values: findAll(container, "json-value").map(e => e.value)
+            })
+        """)
+        )
+        self.assertEqual(
+            result["types"],
+            ["string", "string", "number", "boolean", "boolean", "null", "string"],
+        )
+        self.assertEqual(result["quotes"], 6)
+        self.assertEqual(
+            result["values"],
+            ["", '"hello"\nworld', "9007199254740993", "true", "false", "null", "null"],
+        )
+        self.assertEqual(self.harness._returned_value(ctx), data)
+
+    def test_readonly_values_remain_selectable_and_keep_their_type(self):
+        ctx = self._ctx({"note": "hello\nworld", "count": 5, "missing": None})
+        ctx.eval("""
+            editorState.valueEditable = false;
+            container.innerHTML = "";
+            renderNode(container, editorState.data, 0);
+        """)
+        result = json.loads(
+            ctx.eval(
+                'JSON.stringify(findAll(container, "json-value").map(e => ({readonly: e.readOnly, disabled: e.disabled})))'
+            )
+        )
+        self.assertEqual(result, [{"readonly": True, "disabled": False}] * 3)
