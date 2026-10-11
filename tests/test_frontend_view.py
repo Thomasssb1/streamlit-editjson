@@ -19,8 +19,7 @@ class TestFrontendView(unittest.TestCase):
                 return findAll(child, className);
               }));
             }
-            var container = document.createElement("div");
-            renderNode(container, editorState.data, 0);
+            var container = document.getElementById("json-container");
         """)
         return ctx
 
@@ -538,3 +537,94 @@ class TestFrontendView(unittest.TestCase):
                         'findAll(container, "json-error").filter(e => !e.hidden).map(e => e.textContent).join(" ")'
                     ),
                 )
+
+    def test_render_echo_keeps_other_fields_editable_when_an_error_is_visible(self):
+        data = {"count": 5, "note": "original"}
+        ctx = self._ctx(data)
+        ctx.eval("""
+            var editor = document.getElementById("json-container");
+            var count = findAll(editor, "json-value")[0];
+            count.value = "";
+            count.dispatchEvent({type: "change"});
+            var note = findAll(editor, "json-value")[1];
+            note.focus();
+            note.value = "draft in progress";
+            note.dispatchEvent({type: "input"});
+            var messagesBefore = __messages.length;
+        """)
+        event = {"detail": {"args": {"json_str": json.dumps(data)}}}
+        ctx.eval("for (var i = 0; i < 10; i++) onRender(" + json.dumps(event) + ");")
+        self.assertTrue(ctx.eval('note === findAll(editor, "json-value")[1]'))
+        self.assertTrue(ctx.eval("document.activeElement === note"))
+        self.assertEqual(
+            ctx.eval('findAll(editor, "json-value")[1].value'), "draft in progress"
+        )
+        self.assertEqual(ctx.eval("__messages.length"), ctx.eval("messagesBefore"))
+        ctx.eval('note.dispatchEvent({type: "change"});')
+        self.assertEqual(
+            self.harness._returned_value(ctx), {"count": 5, "note": "draft in progress"}
+        )
+        self.assertEqual(ctx.eval('count.getAttribute("aria-invalid")'), "true")
+        ctx.eval('count.value = "0"; count.dispatchEvent({type: "change"});')
+        self.assertEqual(
+            self.harness._returned_value(ctx), {"count": 0, "note": "draft in progress"}
+        )
+        self.assertIsNone(ctx.eval('count.getAttribute("aria-invalid")'))
+
+    def test_error_restoration_reports_height_only_after_rendering_finishes(self):
+        ctx = self._ctx({"count": 5, "note": "original"})
+        ctx.eval("""
+            var editor = document.getElementById("json-container");
+            var count = findAll(editor, "json-value")[0];
+            count.value = "";
+            count.dispatchEvent({type: "change"});
+            var renderedCounts = [];
+            Streamlit.setFrameHeight = function () { renderedCounts.push(findAll(editor, "json-value").length); };
+            renderEditor();
+        """)
+        self.assertEqual(json.loads(ctx.eval("JSON.stringify(renderedCounts)")), [2])
+
+    def test_unchanged_iframe_height_is_not_sent_again(self):
+        ctx = self._ctx({})
+        ctx.eval("""
+            __messages = [];
+            Streamlit.setFrameHeight(250);
+            Streamlit.setFrameHeight(250);
+            Streamlit.setFrameHeight(300);
+            Streamlit.setFrameHeight(300);
+        """)
+        self.assertEqual(
+            json.loads(ctx.eval("JSON.stringify(__messages.map(m => m.height))")),
+            [250, 300],
+        )
+
+    def test_permission_changes_still_update_existing_controls(self):
+        ctx = self._ctx({"note": "original"})
+        event = {
+            "detail": {
+                "args": {
+                    "json_str": json.dumps({"note": "original"}),
+                    "value_editable": False,
+                }
+            }
+        }
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        self.assertTrue(
+            ctx.eval(
+                'findAll(document.getElementById("json-container"), "json-value")[0].readOnly'
+            )
+        )
+
+    def test_layout_height_changes_do_not_replace_existing_controls(self):
+        ctx = self._ctx({"note": "original"})
+        ctx.eval(
+            'var note = findAll(document.getElementById("json-container"), "json-value")[0]; document.body.scrollHeight = 300;'
+        )
+        event = {"detail": {"args": {"json_str": json.dumps({"note": "original"})}}}
+        ctx.eval("onRender(" + json.dumps(event) + ");")
+        self.assertTrue(
+            ctx.eval(
+                'note === findAll(document.getElementById("json-container"), "json-value")[0]'
+            )
+        )
+        self.assertEqual(ctx.eval("Streamlit.lastFrameHeight"), 320)

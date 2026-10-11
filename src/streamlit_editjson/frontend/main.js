@@ -225,11 +225,11 @@ function bindFieldError(input, container, kind, path) {
   } else if (editorState.rejections.has(key)) {
     const rejected = editorState.rejections.get(key);
     input.value = rejected.value;
-    showFieldError(input, rejected.message);
+    showFieldError(input, rejected.message, false);
   }
 }
 
-function showFieldError(input, message) {
+function showFieldError(input, message, resize = true) {
   const {error, key} = fieldErrors.get(input);
   error.textContent = message;
   error.hidden = false;
@@ -237,7 +237,7 @@ function showFieldError(input, message) {
   input.setAttribute("aria-invalid", "true");
   input.setAttribute("aria-describedby", error.id);
   editorState.rejections.set(key, {value: input.value, message});
-  Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  if (resize) Streamlit.setFrameHeight(document.body.scrollHeight + 20);
 }
 
 function clearFieldError(input) {
@@ -584,10 +584,18 @@ function onRender(event) {
     editorState.initialized = true;
   }
 
+  const permissionsChanged = editorState.keyEditable !== Boolean(key_editable) ||
+    editorState.valueEditable !== Boolean(value_editable);
   editorState.keyEditable = Boolean(key_editable);
   editorState.valueEditable = Boolean(value_editable);
 
-  renderEditor();
+  // Streamlit also sends render events after iframe height updates and reruns.
+  // Preserve focus and uncommitted drafts when the editor's inputs are unchanged.
+  if (shouldReset || permissionsChanged) {
+    renderEditor();
+  } else {
+    Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+  }
 
   if (shouldReset) {
     resetCopyStatus();

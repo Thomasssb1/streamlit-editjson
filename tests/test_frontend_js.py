@@ -63,7 +63,7 @@ class TestFrontendJS(unittest.TestCase):
                   removeAttribute: function (name) { delete this.attributes[name]; },
                   children: [],
                   validationMessage: "",
-                  focus: function () {},
+                  focus: function () { document.activeElement = this; },
                   select: function () {},
                   setCustomValidity: function (message) { this.validationMessage = message; },
                   reportValidity: function () { return !this.validationMessage; },
