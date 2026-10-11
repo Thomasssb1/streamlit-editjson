@@ -1,5 +1,5 @@
 # streamlit-editjson
-![PyPI - Version](https://img.shields.io/pypi/v/streamlit-editjson)
+[![PyPI - Version](https://img.shields.io/badge/PyPI-v1.1.1-blue)](https://pypi.org/project/streamlit-editjson/1.1.1/)
 
 A Streamlit component to view and edit JSON with a user-friendly UI.
 
