@@ -73,3 +73,8 @@
 .json-value-number:invalid {
   border-color: #ff6b6b;
 }
+
+textarea.json-value-text {
+  font-family: inherit;
+  resize: none;
+}

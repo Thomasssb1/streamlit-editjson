@@ -17,7 +17,7 @@ class TestFrontendJS(unittest.TestCase):
     def _ctx(self):
         ctx = py_mini_racer.MiniRacer()
         ctx.eval(
-            """
+            r"""
             var window = {};
             var document = {
               body: { scrollHeight: 120 },
@@ -28,7 +28,7 @@ class TestFrontendJS(unittest.TestCase):
                 };
               },
               createElement: function (tag) {
-                return {
+                var element = {
                   tagName: tag,
                   className: "",
                   type: "",
@@ -44,6 +44,19 @@ class TestFrontendJS(unittest.TestCase):
                   appendChild: function (child) { this.children.push(child); },
                   addEventListener: function (_name, cb) { this._listener = cb; }
                 };
+                // Model the browser's single-line input value sanitization.
+                Object.defineProperty(element, "value", {
+                  get: function () { return this._value || ""; },
+                  set: function (value) {
+                    this._value = String(value);
+                    if (tag === "input" && this.type === "text") {
+                      this._value = this._value.replace(/[\r\n]/g, "");
+                    } else if (tag === "textarea") {
+                      this._value = this._value.replace(/\r\n?/g, "\n");
+                    }
+                  }
+                });
+                return element;
               }
             };
 
@@ -195,6 +208,52 @@ class TestFrontendJS(unittest.TestCase):
                 self.assertEqual(self._returned_value(ctx), {"count": expected})
                 self.assertEqual(result["emissions"], 2)
                 self.assertEqual(result["error"], "")
+
+    def test_multiline_strings_keep_breaks_when_displayed_and_edited(self):
+        for original in [
+            "first\nsecond",
+            "\nfirst\n\nlast\n",
+            'quote " and \\\nnext',
+            "first",
+        ]:
+            with self.subTest(original=original):
+                ctx = self._capture_render({"note": original})
+                edited = original + "\nthird"
+                result = json.loads(
+                    ctx.eval(
+                        """
+                    JSON.stringify((function () {
+                      var row = document.createElement("div");
+                      renderPrimitiveControl(row, editorState.data.note, function (v) {
+                        editorState.data.note = v;
+                      });
+                      var input = row.children[0];
+                      var initial = input.value;
+                      input.value = %s;
+                      input._listener();
+                      return { initial: initial };
+                    })())
+                """
+                        % json.dumps(edited)
+                    )
+                )
+                self.assertEqual(result["initial"], original)
+                self.assertEqual(self._returned_value(ctx), {"note": edited})
+
+    def test_readonly_multiline_string_keeps_breaks(self):
+        ctx = self._capture_render({"note": "first\nsecond"})
+        result = json.loads(
+            ctx.eval("""
+            JSON.stringify((function () {
+              editorState.valueEditable = false;
+              var row = document.createElement("div");
+              renderPrimitiveControl(row, editorState.data.note, function () {});
+              return { value: row.children[0].value, disabled: row.children[0].disabled };
+            })())
+        """)
+        )
+        self.assertEqual(result["value"], "first\nsecond")
+        self.assertTrue(result["disabled"])
 
     def test_create_boolean_select_shape(self):
         ctx = self._ctx()

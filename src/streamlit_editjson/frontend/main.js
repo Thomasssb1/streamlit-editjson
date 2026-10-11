@@ -71,12 +71,24 @@ function createLabel(text, className) {
   return node;
 }
 
-function createTextInput(value, className, editable) {
-  const input = document.createElement("input");
+function createTextInput(value, className, editable, multiline = false) {
+  const input = document.createElement(multiline ? "textarea" : "input");
   input.className = className;
-  input.type = "text";
+  if (!multiline) {
+    input.type = "text";
+  }
   input.value = value;
   input.disabled = !editable;
+  if (multiline) {
+    const updateRows = () => {
+      input.rows = Math.min(8, input.value.split(/\r\n|\r|\n/).length);
+    };
+    updateRows();
+    input.addEventListener("input", () => {
+      updateRows();
+      Streamlit.setFrameHeight(document.body.scrollHeight + 20);
+    });
+  }
   return input;
 }
 
@@ -174,7 +186,9 @@ function renderPrimitiveControl(parentRow, value, onChange) {
   }
 
   const text = value === null ? "null" : String(value);
-  const input = createTextInput(text, "json-value json-value-text", editable);
+  const input = createTextInput(
+    text, "json-value json-value-text", editable, typeof value === "string",
+  );
   input.addEventListener("change", () => {
     if (value === null) {
       onChange(parseLoosePrimitive(input.value));
