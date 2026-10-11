@@ -40,26 +40,6 @@ Clearing a number field, or entering an invalid number, keeps its last valid val
 and displays a validation error. Enter `0` explicitly to set a value to zero.
 String values use text areas so line breaks remain visible and editable.
 
-## Migrating from `editable`
-
-The old `editable=` keyword still works. New code should use `value_editable=`:
-
-```python
-# Before (still supported)
-value = editjson("test.json", editable=False, key="editor")
-
-# After
-value = editjson("test.json", value_editable=False, key="editor")
-```
-
-If both keywords are supplied, the explicit `value_editable` wins. The alias does
-not change `key_editable`, which remains `False` by default.
-
-This compatibility alias applies to keyword calls. Rewrite old positional calls
-such as `editjson(path, False, "editor")` as
-`editjson(path, value_editable=False, key="editor")`; positional arguments now
-mean `filepath, key_editable, value_editable, key`.
-
 ## Testing
 
 Install the development dependencies so local checks use the same Ruff version
